@@ -33,13 +33,13 @@ import (
 	"github.com/openshift/gcp-pd-csi-driver-operator/pkg/generated"
 )
 
-var log = logf.Log.WithName("aws_ebs_csi_driver_operator")
+var log = logf.Log.WithName("gcp_pd_csi_driver_operator")
 
 const (
-	operandName      = "aws-ebs-csi-driver"
-	operandNamespace = "openshift-aws-ebs-csi-driver"
+	operandName      = "gcp-pd-csi-driver"
+	operandNamespace = "openshift-gcp-pd-csi-driver"
 
-	operatorFinalizer = "csi.storage.operator.openshift.io"
+	operatorFinalizer = "pd.gcp.csi.openshift.io"
 	operatorNamespace = "openshift-gcp-pd-csi-driver-operator"
 
 	operatorVersionEnvName = "OPERATOR_IMAGE_VERSION"
@@ -130,7 +130,7 @@ func NewCSIDriverOperator(
 		dsSetInformer:      dsInformer,
 		versionGetter:      versionGetter,
 		eventRecorder:      eventRecorder,
-		queue:              workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "aws-ebs-csi-driver"),
+		queue:              workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "gcp-pd-csi-driver"),
 		operatorVersion:    operatorVersion,
 		operandVersion:     operandVersion,
 		images:             images,
@@ -303,40 +303,6 @@ func (c *csiDriverOperator) updateSyncError(status *operatorv1.OperatorStatus, e
 }
 
 func (c *csiDriverOperator) handleSync(instance *v1alpha1.PDDriver) error {
-	err := c.syncCSIDriver(instance)
-	if err != nil {
-		return fmt.Errorf("failed to sync CSIDriver: %v", err)
-	}
-
-	err = c.syncNamespace(instance)
-	if err != nil {
-		return fmt.Errorf("failed to sync namespace: %v", err)
-	}
-
-	credentialsRequest, err := c.syncCredentialsRequest(instance)
-	if err != nil {
-		return fmt.Errorf("failed to sync CredentialsRequest: %v", err)
-	}
-
-	err = c.tryCredentialsSecret(instance)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			// Have a nice event instead of "secret XYZ not found"
-			return fmt.Errorf("waiting for cloud credentials secret provided by cloud-credential-operator")
-		}
-		return fmt.Errorf("error waiting for cloud credentials:: %v", err)
-	}
-
-	err = c.syncServiceAccounts(instance)
-	if err != nil {
-		return fmt.Errorf("failed to sync ServiceAccount: %v", err)
-	}
-
-	err = c.syncRBAC(instance)
-	if err != nil {
-		return fmt.Errorf("failed to sync RBAC: %v", err)
-	}
-
 	deployment, err := c.syncDeployment(instance)
 	if err != nil {
 		return fmt.Errorf("failed to sync Deployment: %v", err)
@@ -347,12 +313,7 @@ func (c *csiDriverOperator) handleSync(instance *v1alpha1.PDDriver) error {
 		return fmt.Errorf("failed to sync DaemonSet: %v", err)
 	}
 
-	err = c.syncStorageClass(instance)
-	if err != nil {
-		return fmt.Errorf("failed to sync StorageClass: %v", err)
-	}
-
-	if err := c.syncStatus(instance, deployment, daemonSet, credentialsRequest); err != nil {
+	if err := c.syncStatus(instance, deployment, daemonSet); err != nil {
 		return fmt.Errorf("failed to sync status: %v", err)
 	}
 

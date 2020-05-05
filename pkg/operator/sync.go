@@ -2,17 +2,13 @@ package operator
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/util/json"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/operator/events"
@@ -67,9 +63,9 @@ func (c *csiDriverOperator) syncDeployment(instance *v1alpha1.PDDriver) (*appsv1
 	// below detects its change. This is going to cover log level, image
 	// and/or bindata changes.
 	// TODO: use resourceapply.ApplyDeployment when it gets hashing of Spec.
-	if err := addDeploymentHash(deploy); err != nil {
-		return nil, err
-	}
+	// if err := addDeploymentHash(deploy); err != nil {
+	// 	return nil, err
+	// }
 
 	deploy, _, err := resourceapply.ApplyDeployment(
 		c.kubeClient.AppsV1(),
@@ -90,9 +86,9 @@ func (c *csiDriverOperator) syncDaemonSet(instance *v1alpha1.PDDriver) (*appsv1.
 	// below detects its change. This is going to cover log level, image
 	// and/or bindata changes.
 	// TODO: use resourceapply.ApplyDaemonSet when it gets hashing of Spec.
-	if err := addDaemonSetHash(daemonSet); err != nil {
-		return nil, err
-	}
+	// if err := addDaemonSetHash(daemonSet); err != nil {
+	// 	return nil, err
+	// }
 
 	daemonSet, _, err := resourceapply.ApplyDaemonSet(
 		c.kubeClient.AppsV1(),
@@ -105,126 +101,6 @@ func (c *csiDriverOperator) syncDaemonSet(instance *v1alpha1.PDDriver) (*appsv1.
 
 	return daemonSet, nil
 }
-
-func (c *csiDriverOperator) syncCSIDriver(instance *v1alpha1.PDDriver) error {
-	csiDriver := resourceread.ReadCSIDriverV1Beta1OrDie(generated.MustAsset(csiDriver))
-
-	_, _, err := resourceapply.ApplyCSIDriverV1Beta1(
-		c.kubeClient.StorageV1beta1(),
-		c.eventRecorder,
-		csiDriver)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (c *csiDriverOperator) syncNamespace(instance *v1alpha1.PDDriver) error {
-	namespace := resourceread.ReadNamespaceV1OrDie(generated.MustAsset(namespace))
-
-	if namespace.Name != operandNamespace {
-		return fmt.Errorf("namespace names mismatch: %q and %q", namespace.Name, operandNamespace)
-	}
-
-	_, _, err := resourceapply.ApplyNamespace(
-		c.kubeClient.CoreV1(),
-		c.eventRecorder,
-		namespace)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (c *csiDriverOperator) syncServiceAccounts(instance *v1alpha1.PDDriver) error {
-	for _, s := range serviceAccounts {
-		serviceAccount := resourceread.ReadServiceAccountV1OrDie(generated.MustAsset(s))
-
-		// Make sure it's created in the correct namespace
-		serviceAccount.Namespace = operandNamespace
-
-		_, _, err := resourceapply.ApplyServiceAccount(
-			c.kubeClient.CoreV1(),
-			c.eventRecorder,
-			serviceAccount)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (c *csiDriverOperator) syncRBAC(instance *v1alpha1.PDDriver) error {
-	for _, r := range clusterRoles {
-		role := resourceread.ReadClusterRoleV1OrDie(generated.MustAsset(r))
-		_, _, err := resourceapply.ApplyClusterRole(c.kubeClient.RbacV1(), c.eventRecorder, role)
-		if err != nil {
-			return err
-		}
-	}
-
-	for _, b := range clusterRoleBindings {
-		binding := resourceread.ReadClusterRoleBindingV1OrDie(generated.MustAsset(b))
-		_, _, err := resourceapply.ApplyClusterRoleBinding(c.kubeClient.RbacV1(), c.eventRecorder, binding)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (c *csiDriverOperator) syncCredentialsRequest(instance *v1alpha1.PDDriver) (*unstructured.Unstructured, error) {
-	cr := readCredentialRequestsOrDie(generated.MustAsset(credentialsRequest))
-
-	// Set spec.secretRef.namespace
-	err := unstructured.SetNestedField(cr.Object, operandNamespace, "spec", "secretRef", "namespace")
-	if err != nil {
-		return nil, err
-	}
-
-	forceRollout := false
-	if c.versionChanged("operator", c.operatorVersion) {
-		// Operator version changed. The new one _may_ have updated Deployment -> we should deploy it.
-		forceRollout = true
-	}
-
-	var expectedGeneration int64 = -1
-	generation := resourcemerge.GenerationFor(
-		instance.Status.Generations,
-		schema.GroupResource{Group: credentialsRequestGroup, Resource: credentialsRequestResource},
-		cr.GetNamespace(),
-		cr.GetName())
-	if generation != nil {
-		expectedGeneration = generation.LastGeneration
-	}
-
-	cr, _, err = applyCredentialsRequest(c.dynamicClient, c.eventRecorder, cr, expectedGeneration, forceRollout)
-	return cr, err
-}
-
-func (c *csiDriverOperator) tryCredentialsSecret(instance *v1alpha1.PDDriver) error {
-	_, err := c.secretInformer.Lister().Secrets(operandNamespace).Get(credentialsSecret)
-	return err
-}
-
-func (c *csiDriverOperator) syncStorageClass(instance *v1alpha1.PDDriver) error {
-	storageClass := resourceread.ReadStorageClassV1OrDie(generated.MustAsset(storageClass))
-
-	_, _, err := resourceapply.ApplyStorageClass(
-		c.kubeClient.StorageV1(),
-		c.eventRecorder,
-		storageClass)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func (c *csiDriverOperator) getExpectedDeployment(instance *v1alpha1.PDDriver) *appsv1.Deployment {
 	deployment := resourceread.ReadDeploymentV1OrDie(generated.MustAsset(deployment))
 
@@ -298,20 +174,20 @@ func getLogLevel(logLevel operatorv1.LogLevel) int {
 	}
 }
 
-func (c *csiDriverOperator) syncStatus(instance *v1alpha1.PDDriver, deployment *appsv1.Deployment, daemonSet *appsv1.DaemonSet, credentialsRequest *unstructured.Unstructured) error {
+func (c *csiDriverOperator) syncStatus(instance *v1alpha1.PDDriver, deployment *appsv1.Deployment, daemonSet *appsv1.DaemonSet) error {
 	c.syncConditions(instance, deployment, daemonSet)
 
 	resourcemerge.SetDeploymentGeneration(&instance.Status.Generations, deployment)
 	resourcemerge.SetDaemonSetGeneration(&instance.Status.Generations, daemonSet)
-	if credentialsRequest != nil {
-		resourcemerge.SetGeneration(&instance.Status.Generations, operatorv1.GenerationStatus{
-			Group:          credentialsRequestGroup,
-			Resource:       credentialsRequestResource,
-			Namespace:      credentialsRequest.GetNamespace(),
-			Name:           credentialsRequest.GetName(),
-			LastGeneration: credentialsRequest.GetGeneration(),
-		})
-	}
+	// if credentialsRequest != nil {
+	// 	resourcemerge.SetGeneration(&instance.Status.Generations, operatorv1.GenerationStatus{
+	// 		Group:          credentialsRequestGroup,
+	// 		Resource:       credentialsRequestResource,
+	// 		Namespace:      credentialsRequest.GetNamespace(),
+	// 		Name:           credentialsRequest.GetName(),
+	// 		LastGeneration: credentialsRequest.GetGeneration(),
+	// 	})
+	// }
 
 	instance.Status.ObservedGeneration = instance.Generation
 
@@ -495,30 +371,4 @@ func reportDeleteEvent(recorder events.Recorder, obj runtime.Object, originalErr
 	default:
 		recorder.Eventf(fmt.Sprintf("%sDeleted", gvk.Kind), "Deleted %s:\n%s", resourcehelper.FormatResourceForCLIWithNamespace(obj), strings.Join(details, "\n"))
 	}
-}
-
-func addDeploymentHash(deployment *appsv1.Deployment) error {
-	jsonBytes, err := json.Marshal(deployment.Spec)
-	if err != nil {
-		return err
-	}
-	specHash := fmt.Sprintf("%x", sha256.Sum256(jsonBytes))
-	if deployment.Annotations == nil {
-		deployment.Annotations = map[string]string{}
-	}
-	deployment.Annotations[specHashAnnotation] = specHash
-	return nil
-}
-
-func addDaemonSetHash(daemonSet *appsv1.DaemonSet) error {
-	jsonBytes, err := json.Marshal(daemonSet.Spec)
-	if err != nil {
-		return err
-	}
-	specHash := fmt.Sprintf("%x", sha256.Sum256(jsonBytes))
-	if daemonSet.Annotations == nil {
-		daemonSet.Annotations = map[string]string{}
-	}
-	daemonSet.Annotations[specHashAnnotation] = specHash
-	return nil
 }

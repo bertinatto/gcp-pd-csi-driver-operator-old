@@ -16,9 +16,13 @@ import (
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	"github.com/openshift/library-go/pkg/operator/loglevel"
 	"github.com/openshift/library-go/pkg/operator/management"
+	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
+	"github.com/openshift/library-go/pkg/operator/staticresourcecontroller"
 	"github.com/openshift/library-go/pkg/operator/status"
+	"github.com/openshift/library-go/pkg/operator/v1helpers"
 
 	"github.com/openshift/gcp-pd-csi-driver-operator/pkg/common"
+	"github.com/openshift/gcp-pd-csi-driver-operator/pkg/generated"
 	clientset "github.com/openshift/gcp-pd-csi-driver-operator/pkg/generated/clientset/versioned"
 	informers "github.com/openshift/gcp-pd-csi-driver-operator/pkg/generated/informers/externalversions"
 )
@@ -57,13 +61,13 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		ctrlClientset.GcpV1alpha1(),
 	}
 
-	// operatorClient, _, err := goc.NewClusterScopedOperatorClient(
-	// 	controllerConfig.KubeConfig,
-	// 	v1alpha1.SchemeGroupVersion.WithResource("pddrivers"),
-	// )
-	if err != nil {
-		return err
-	}
+	// // operatorClient, _, err := goc.NewClusterScopedOperatorClient(
+	// // 	controllerConfig.KubeConfig,
+	// // 	v1alpha1.SchemeGroupVersion.WithResource("pddrivers"),
+	// // )
+	// if err != nil {
+	// 	return err
+	// }
 
 	cb, err := common.NewBuilder("")
 	if err != nil {
@@ -72,6 +76,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 
 	ctrlCtx := common.CreateControllerContext(cb, ctx.Done(), operandNamespace)
 	versionGetter := status.NewVersionGetter()
+	kubeClient := ctrlCtx.ClientBuilder.KubeClientOrDie(operandName)
 
 	operator := NewCSIDriverOperator(
 		operatorClient,
@@ -85,7 +90,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		ctrlCtx.KubeNamespacedInformerFactory.Apps().V1().DaemonSets(),
 		ctrlCtx.KubeNamespacedInformerFactory.Storage().V1().StorageClasses(),
 		ctrlCtx.KubeNamespacedInformerFactory.Core().V1().Secrets(),
-		ctrlCtx.ClientBuilder.KubeClientOrDie(operandName),
+		kubeClient,
 		dynamicClient,
 		versionGetter,
 		controllerConfig.EventRecorder,
@@ -100,6 +105,23 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 
 	// This controller syncs the operator log level with the value set in the CR.Spec.OperatorLogLevel
 	logLevelController := loglevel.NewClusterOperatorLoggingController(operatorClient, controllerConfig.EventRecorder)
+
+	// Static files
+	kubeInformersForNamespaces := v1helpers.NewKubeInformersForNamespaces(kubeClient,
+		"",
+		operatorNamespace,
+	)
+
+	staticResourceController := staticresourcecontroller.NewStaticResourceController(
+		"GCPPDDriverStaticResources",
+		generated.Asset,
+		[]string{
+			"namespace.yaml",
+		},
+		(&resourceapply.ClientHolder{}).WithKubernetes(kubeClient),
+		operatorClient,
+		operator.eventRecorder,
+	).AddKubeInformers(kubeInformersForNamespaces)
 
 	klog.Info("Starting the Informers.")
 	for _, informer := range []interface {
@@ -116,13 +138,15 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	for _, controller := range []interface {
 		Run(ctx context.Context, workers int)
 	}{
+		staticResourceController,
 		logLevelController,
 		managementStateController,
 	} {
 		go controller.Run(ctx, 1)
 	}
+
 	klog.Info("Starting the operator.")
-	go operator.Run(1, ctx.Done())
+	// go operator.Run(1, ctx.Done())
 
 	<-ctx.Done()
 
