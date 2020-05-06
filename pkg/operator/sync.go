@@ -59,14 +59,6 @@ var (
 func (c *csiDriverOperator) syncDeployment(instance *v1alpha1.PDDriver) (*appsv1.Deployment, error) {
 	deploy := c.getExpectedDeployment(instance)
 
-	// Record the hash of the spec in an annotation so ApplyDeployment
-	// below detects its change. This is going to cover log level, image
-	// and/or bindata changes.
-	// TODO: use resourceapply.ApplyDeployment when it gets hashing of Spec.
-	// if err := addDeploymentHash(deploy); err != nil {
-	// 	return nil, err
-	// }
-
 	deploy, _, err := resourceapply.ApplyDeployment(
 		c.kubeClient.AppsV1(),
 		c.eventRecorder,
@@ -81,14 +73,6 @@ func (c *csiDriverOperator) syncDeployment(instance *v1alpha1.PDDriver) (*appsv1
 
 func (c *csiDriverOperator) syncDaemonSet(instance *v1alpha1.PDDriver) (*appsv1.DaemonSet, error) {
 	daemonSet := c.getExpectedDaemonSet(instance)
-
-	// Record the hash of the spec in an annotation so ApplyDaemonSet
-	// below detects its change. This is going to cover log level, image
-	// and/or bindata changes.
-	// TODO: use resourceapply.ApplyDaemonSet when it gets hashing of Spec.
-	// if err := addDaemonSetHash(daemonSet); err != nil {
-	// 	return nil, err
-	// }
 
 	daemonSet, _, err := resourceapply.ApplyDaemonSet(
 		c.kubeClient.AppsV1(),

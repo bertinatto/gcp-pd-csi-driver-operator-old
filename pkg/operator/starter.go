@@ -109,14 +109,21 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	// Static files
 	kubeInformersForNamespaces := v1helpers.NewKubeInformersForNamespaces(kubeClient,
 		"",
-		operatorNamespace,
-	)
+		operandNamespace,
+		operatorNamespace)
 
 	staticResourceController := staticresourcecontroller.NewStaticResourceController(
 		"GCPPDDriverStaticResources",
 		generated.Asset,
 		[]string{
 			"namespace.yaml",
+			"controller_sa.yaml",
+			"node_sa.yaml",
+			"storageclass.yaml",
+			"rbac/provisioner_binding.yaml",
+			"rbac/provisioner_role.yaml",
+			"rbac/attacher_binding.yaml",
+			"rbac/attacher_role.yaml",
 		},
 		(&resourceapply.ClientHolder{}).WithKubernetes(kubeClient),
 		operatorClient,
@@ -130,6 +137,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		ctrlInformers,
 		apiInformers,
 		ctrlCtx.KubeNamespacedInformerFactory,
+		kubeInformersForNamespaces,
 	} {
 		informer.Start(ctx.Done())
 	}
