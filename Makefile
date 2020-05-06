@@ -24,9 +24,9 @@ define run-codegen
 	"$(CODEGEN_OUTPUT_PACKAGE)" \
 	"$(CODEGEN_API_PACKAGE)" \
 	"$(CODEGEN_GROUPS_VERSION)" \
-    --output-base $(CODEGEN_OUTPUT_BASE) \
-    --go-header-file $(CODEGEN_GO_HEADER_FILE) \
-    $1
+	--output-base $(CODEGEN_OUTPUT_BASE) \
+	--go-header-file $(CODEGEN_GO_HEADER_FILE) \
+	$1
 endef
 
 # Run core verification and all self contained tests.
