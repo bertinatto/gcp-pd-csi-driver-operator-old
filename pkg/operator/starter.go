@@ -117,9 +117,9 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		generated.Asset,
 		[]string{
 			"namespace.yaml",
+			"storageclass.yaml",
 			"controller_sa.yaml",
 			"node_sa.yaml",
-			"storageclass.yaml",
 			"rbac/provisioner_binding.yaml",
 			"rbac/provisioner_role.yaml",
 			"rbac/attacher_binding.yaml",
@@ -154,7 +154,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	}
 
 	klog.Info("Starting the operator.")
-	// go operator.Run(1, ctx.Done())
+	go operator.Run(1, ctx.Done())
 
 	<-ctx.Done()
 

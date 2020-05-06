@@ -1,13 +1,11 @@
 package operator
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -23,37 +21,9 @@ import (
 )
 
 const (
-	csiDriver          = "csidriver.yaml"
-	namespace          = "namespace.yaml"
-	serviceAccount     = "serviceaccount.yaml"
-	storageClass       = "storageclass.yaml"
-	daemonSet          = "node_daemonset.yaml"
-	deployment         = "controller_deployment.yaml"
-	credentialsSecret  = "aws-cloud-credentials"
-	specHashAnnotation = "operator.openshift.io/spec-hash"
-)
-
-var (
-	serviceAccounts = []string{
-		"node_sa.yaml",
-		"controller_sa.yaml",
-	}
-	clusterRoles = []string{
-		"rbac/provisioner_role.yaml",
-		"rbac/attacher_role.yaml",
-		"rbac/resizer_role.yaml",
-		"rbac/snapshotter_role.yaml",
-		"rbac/privileged_role.yaml",
-	}
-	clusterRoleBindings = []string{
-		"rbac/provisioner_binding.yaml",
-		"rbac/attacher_binding.yaml",
-		"rbac/resizer_binding.yaml",
-		"rbac/snapshotter_binding.yaml",
-		"rbac/controller_privileged_binding.yaml",
-		"rbac/node_privileged_binding.yaml",
-	}
-	credentialsRequest = "credentials.yaml"
+	csiDriver  = "csidriver.yaml"
+	daemonSet  = "node_daemonset.yaml"
+	deployment = "controller_deployment.yaml"
 )
 
 func (c *csiDriverOperator) syncDeployment(instance *v1alpha1.PDDriver) (*appsv1.Deployment, error) {
@@ -294,54 +264,6 @@ func (c *csiDriverOperator) syncProgressingCondition(instance *v1alpha1.PDDriver
 
 // TODO: move this to resourceapply package and delete reportDeleteEvent()
 func (c *csiDriverOperator) deleteAll() error {
-	// Delete all namespaced resources at once by deleting the namespace
-	namespace := resourceread.ReadNamespaceV1OrDie(generated.MustAsset(namespace))
-	err := c.kubeClient.CoreV1().Namespaces().Delete(context.TODO(), namespace.Name, metav1.DeleteOptions{})
-	reportDeleteEvent(c.eventRecorder, namespace, err)
-	if err != nil && !apierrors.IsNotFound(err) {
-		return err
-	}
-
-	// Then delete all non-namespaced ones
-	storageClass := resourceread.ReadStorageClassV1OrDie(generated.MustAsset(storageClass))
-	err = c.kubeClient.StorageV1().StorageClasses().Delete(context.TODO(), storageClass.Name, metav1.DeleteOptions{})
-	reportDeleteEvent(c.eventRecorder, storageClass, err)
-	if err != nil && !apierrors.IsNotFound(err) {
-		return err
-	}
-
-	csiDriver := resourceread.ReadCSIDriverV1Beta1OrDie(generated.MustAsset(csiDriver))
-	err = c.kubeClient.StorageV1beta1().CSIDrivers().Delete(context.TODO(), csiDriver.Name, metav1.DeleteOptions{})
-	reportDeleteEvent(c.eventRecorder, csiDriver, err)
-	if err != nil && !apierrors.IsNotFound(err) {
-		return err
-	}
-
-	for _, r := range clusterRoles {
-		role := resourceread.ReadClusterRoleV1OrDie(generated.MustAsset(r))
-		err := c.kubeClient.RbacV1().ClusterRoles().Delete(context.TODO(), role.Name, metav1.DeleteOptions{})
-		reportDeleteEvent(c.eventRecorder, role, err)
-		if err != nil && !apierrors.IsNotFound(err) {
-			return err
-		}
-	}
-
-	for _, b := range clusterRoleBindings {
-		binding := resourceread.ReadClusterRoleBindingV1OrDie(generated.MustAsset(b))
-		err := c.kubeClient.RbacV1().ClusterRoleBindings().Delete(context.TODO(), binding.Name, metav1.DeleteOptions{})
-		reportDeleteEvent(c.eventRecorder, binding, err)
-		if err != nil && !apierrors.IsNotFound(err) {
-			return err
-		}
-	}
-
-	cr := readCredentialRequestsOrDie(generated.MustAsset(credentialsRequest))
-	err = c.dynamicClient.Resource(credentialsRequestResourceGVR).Namespace(cr.GetNamespace()).Delete(context.TODO(), cr.GetName(), metav1.DeleteOptions{})
-	reportDeleteEvent(c.eventRecorder, cr, err)
-	if err != nil && !apierrors.IsNotFound(err) {
-		return err
-	}
-
 	return nil
 }
 
