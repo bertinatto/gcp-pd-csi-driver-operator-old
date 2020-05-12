@@ -7,7 +7,9 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/operator/events"
@@ -21,10 +23,41 @@ import (
 )
 
 const (
-	csiDriver  = "csidriver.yaml"
-	daemonSet  = "node.yaml"
-	deployment = "controller.yaml"
+	csiDriver          = "csidriver.yaml"
+	daemonSet          = "node.yaml"
+	deployment         = "controller.yaml"
+	credentialsRequest = "credentials.yaml"
+	specHashAnnotation = "operator.openshift.io/spec-hash"
 )
+
+func (c *csiDriverOperator) syncCredentialsRequest(status *operatorv1.OperatorStatus) (*unstructured.Unstructured, error) {
+	cr := readCredentialRequestsOrDie(generated.MustAsset(credentialsRequest))
+
+	// Set spec.secretRef.namespace
+	err := unstructured.SetNestedField(cr.Object, operandNamespace, "spec", "secretRef", "namespace")
+	if err != nil {
+		return nil, err
+	}
+
+	forceRollout := false
+	// if c.versionChanged("operator", c.operatorVersion) {
+	// 	// Operator version changed. The new one _may_ have updated Deployment -> we should deploy it.
+	// 	forceRollout = true
+	// }
+
+	var expectedGeneration int64 = -1
+	generation := resourcemerge.GenerationFor(
+		status.Generations,
+		schema.GroupResource{Group: credentialsRequestGroup, Resource: credentialsRequestResource},
+		cr.GetNamespace(),
+		cr.GetName())
+	if generation != nil {
+		expectedGeneration = generation.LastGeneration
+	}
+
+	cr, _, err = applyCredentialsRequest(c.dynamicClient, c.eventRecorder, cr, expectedGeneration, forceRollout)
+	return cr, err
+}
 
 func (c *csiDriverOperator) syncDeployment(spec *operatorv1.OperatorSpec, status *operatorv1.OperatorStatus) (*appsv1.Deployment, error) {
 	deploy := c.getExpectedDeployment(spec)

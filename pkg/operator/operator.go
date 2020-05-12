@@ -311,6 +311,11 @@ func (c *csiDriverOperator) updateSyncError(status *operatorv1.OperatorStatus, e
 }
 
 func (c *csiDriverOperator) handleSync(resourceVersion string, meta *metav1.ObjectMeta, spec *operatorv1.OperatorSpec, status *operatorv1.OperatorStatus) error {
+	_, err := c.syncCredentialsRequest(status)
+	if err != nil {
+		return fmt.Errorf("failed to sync CredentialsRequest: %v", err)
+	}
+
 	deployment, err := c.syncDeployment(spec, status)
 	if err != nil {
 		return fmt.Errorf("failed to sync Deployment: %v", err)

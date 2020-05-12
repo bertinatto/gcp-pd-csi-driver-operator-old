@@ -26,9 +26,9 @@ spec:
           args:
             - "--v=5"
             - "--endpoint=unix:/csi/csi.sock"
-          # env:
-          #   - name: GOOGLE_APPLICATION_CREDENTIALS
-          #     value: "/etc/cloud-sa/cloud-sa.json"
+          env:
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: "/etc/cloud-sa/service_account.json"
           volumeMounts:
             - name: socket-dir
               mountPath: /csi
@@ -36,7 +36,7 @@ spec:
               readOnly: true
               mountPath: "/etc/cloud-sa"
         - name: csi-provisioner
-          image: gke.gcr.io/csi-provisioner
+          image: quay.io/openshift/origin-csi-external-provisioner:latest
           args:
             - "--v=5"
             - "--csi-address=/csi/csi.sock"
@@ -47,7 +47,7 @@ spec:
             - name: socket-dir
               mountPath: /csi
         - name: csi-attacher
-          image: gke.gcr.io/csi-attacher
+          image: quay.io/openshift/origin-csi-external-attacher:latest
           args:
             - "--v=5"
             - "--csi-address=/csi/csi.sock"
@@ -55,7 +55,7 @@ spec:
             - name: socket-dir
               mountPath: /csi
         - name: csi-resizer
-          image: gke.gcr.io/csi-resizer
+          image: quay.io/openshift/origin-csi-external-resizer:latest
           args:
             - "--v=5"
             - "--csi-address=/csi/csi.sock"
@@ -67,6 +67,6 @@ spec:
           emptyDir: {}
         - name: cloud-sa-volume
           secret:
-            secretName: cloud-sa
+            secretName: gcp-cloud-credentials
   # This is needed due to https://github.com/kubernetes-sigs/kustomize/issues/504
   volumeClaimTemplates: []
