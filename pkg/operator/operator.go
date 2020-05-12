@@ -7,6 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -29,7 +30,6 @@ import (
 	"github.com/openshift/library-go/pkg/operator/status"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 
-	v1alpha1 "github.com/openshift/gcp-pd-csi-driver-operator/pkg/apis/operator/v1alpha1"
 	"github.com/openshift/gcp-pd-csi-driver-operator/pkg/generated"
 )
 
@@ -68,7 +68,7 @@ const (
 )
 
 type csiDriverOperator struct {
-	client             OperatorClient
+	client             v1helpers.OperatorClient
 	kubeClient         kubernetes.Interface
 	dynamicClient      dynamic.Interface
 	pvInformer         coreinformersv1.PersistentVolumeInformer
@@ -101,7 +101,7 @@ type images struct {
 }
 
 func NewCSIDriverOperator(
-	client OperatorClient,
+	client v1helpers.OperatorClient,
 	pvInformer coreinformersv1.PersistentVolumeInformer,
 	namespaceInformer coreinformersv1.NamespaceInformer,
 	csiDriverInformer storageinformersv1beta1.CSIDriverInformer,
@@ -162,7 +162,7 @@ func NewCSIDriverOperator(
 	storageClassInformer.Informer().AddEventHandler(csiOperator.eventHandler("storageclass"))
 	csiOperator.informersSynced = append(csiOperator.informersSynced, storageClassInformer.Informer().HasSynced)
 
-	client.Informer().AddEventHandler(csiOperator.eventHandler("driver"))
+	client.Informer().AddEventHandler(csiOperator.eventHandler("pddriver"))
 	csiOperator.informersSynced = append(csiOperator.informersSynced, client.Informer().HasSynced)
 
 	secretInformer.Informer().AddEventHandler(csiOperator.eventHandler("secret"))
@@ -191,19 +191,19 @@ func (c *csiDriverOperator) Run(workers int, stopCh <-chan struct{}) {
 }
 
 func (c *csiDriverOperator) sync() error {
-	instance, err := c.client.GetOperatorInstance()
+	meta, metaRV, err := c.client.GetObjectMeta()
 	if err != nil {
 		if errors.IsNotFound(err) {
-			klog.Warningf("Operator instance not found: %v", err)
+			klog.Warningf("Object metadata not found: %v", err)
 			return nil
 		}
 		return err
 	}
 
-	if instance.ObjectMeta.DeletionTimestamp.IsZero() {
+	if meta.DeletionTimestamp.IsZero() {
 		// CR is NOT being deleted, so make sure it has the finalizer
-		if addFinalizer(instance, operatorFinalizer) {
-			c.client.UpdateFinalizers(instance)
+		if addFinalizer(meta, operatorFinalizer) {
+			c.client.UpdateObjectMeta(metaRV, meta)
 		}
 	} else {
 		// User tried to delete the CR, let's evaluate if we can
@@ -220,18 +220,21 @@ func (c *csiDriverOperator) sync() error {
 			return nil
 		} else {
 			// CSI driver is not being used, we can go ahead and remove finalizer and delete the operand
-			removeFinalizer(instance, operatorFinalizer)
-			c.client.UpdateFinalizers(instance)
+			removeFinalizer(meta, operatorFinalizer)
+			c.client.UpdateObjectMeta(metaRV, meta)
 			return c.deleteAll()
 		}
 	}
 
-	// We only support Managed for now
-	if instance.Spec.ManagementState != operatorv1.Managed {
-		return nil
+	opSpec, opStatus, opResourceVersion, err := c.client.GetOperatorState()
+	if err != nil {
+		return err
 	}
 
-	instanceCopy := instance.DeepCopy()
+	// We only support Managed for now
+	if opSpec.ManagementState != operatorv1.Managed {
+		return nil
+	}
 
 	startTime := time.Now()
 	klog.Info("Starting syncing operator at ", startTime)
@@ -239,28 +242,33 @@ func (c *csiDriverOperator) sync() error {
 		klog.Info("Finished syncing operator at ", time.Since(startTime))
 	}()
 
-	syncErr := c.handleSync(instanceCopy)
+	syncErr := c.handleSync(opResourceVersion, meta, opSpec, opStatus)
 	if syncErr != nil {
 		c.eventRecorder.Eventf("SyncError", "Error syncing CSI driver: %s", syncErr)
 	}
-	c.updateSyncError(&instanceCopy.Status.OperatorStatus, syncErr)
 
-	if _, _, err := v1helpers.UpdateStatus(c.client, func(status *operatorv1.OperatorStatus) error {
-		// store a copy of our starting conditions, we need to preserve last transition time
+	c.updateSyncError(opStatus, syncErr)
+
+	// Update the status using our copy
+	_, _, err = v1helpers.UpdateStatus(c.client, func(status *operatorv1.OperatorStatus) error {
+		// Store a copy of our starting conditions, we need to preserve last transition time
 		originalConditions := status.DeepCopy().Conditions
 
-		// copy over everything else
-		instanceCopy.Status.OperatorStatus.DeepCopyInto(status)
+		// Copy over everything else
+		opStatus.DeepCopyInto(status)
 
-		// restore the starting conditions
+		// Restore the starting conditions
 		status.Conditions = originalConditions
 
-		// manually update the conditions while preserving last transition time
-		for _, condition := range instanceCopy.Status.Conditions {
+		// Manually update the conditions while preserving last transition time
+		for _, condition := range opStatus.Conditions {
 			v1helpers.SetOperatorCondition(&status.Conditions, condition)
 		}
+
 		return nil
-	}); err != nil {
+	})
+
+	if err != nil {
 		klog.Errorf("failed to update status: %v", err)
 		if syncErr == nil {
 			syncErr = err
@@ -302,18 +310,18 @@ func (c *csiDriverOperator) updateSyncError(status *operatorv1.OperatorStatus, e
 	}
 }
 
-func (c *csiDriverOperator) handleSync(instance *v1alpha1.PDDriver) error {
-	deployment, err := c.syncDeployment(instance)
+func (c *csiDriverOperator) handleSync(resourceVersion string, meta *metav1.ObjectMeta, spec *operatorv1.OperatorSpec, status *operatorv1.OperatorStatus) error {
+	deployment, err := c.syncDeployment(spec, status)
 	if err != nil {
 		return fmt.Errorf("failed to sync Deployment: %v", err)
 	}
 
-	daemonSet, err := c.syncDaemonSet(instance)
+	daemonSet, err := c.syncDaemonSet(spec, status)
 	if err != nil {
 		return fmt.Errorf("failed to sync DaemonSet: %v", err)
 	}
 
-	if err := c.syncStatus(instance, deployment, daemonSet); err != nil {
+	if err := c.syncStatus(meta, status, deployment, daemonSet); err != nil {
 		return fmt.Errorf("failed to sync status: %v", err)
 	}
 
@@ -395,6 +403,7 @@ func (c *csiDriverOperator) handleErr(err error, key interface{}) {
 }
 
 func (c *csiDriverOperator) isCSIDriverInUse() (bool, error) {
+	return false, nil
 	pvcs, err := c.pvInformer.Lister().List(labels.Everything())
 	if err != nil {
 		return false, fmt.Errorf("could not get list of pvs: %v", err)
@@ -423,23 +432,23 @@ func logInformerEvent(kind, obj interface{}, message string) {
 	}
 }
 
-func addFinalizer(instance *v1alpha1.PDDriver, f string) bool {
-	for _, item := range instance.ObjectMeta.Finalizers {
+func addFinalizer(meta *metav1.ObjectMeta, f string) bool {
+	for _, item := range meta.Finalizers {
 		if item == f {
 			return false
 		}
 	}
-	instance.ObjectMeta.Finalizers = append(instance.ObjectMeta.Finalizers, f)
+	meta.Finalizers = append(meta.Finalizers, f)
 	return true
 }
 
-func removeFinalizer(instance *v1alpha1.PDDriver, f string) {
+func removeFinalizer(meta *metav1.ObjectMeta, f string) {
 	var result []string
-	for _, item := range instance.ObjectMeta.Finalizers {
+	for _, item := range meta.Finalizers {
 		if item == f {
 			continue
 		}
 		result = append(result, item)
 	}
-	instance.ObjectMeta.Finalizers = result
+	meta.Finalizers = result
 }

@@ -14,17 +14,16 @@ import (
 	apiclientset "github.com/openshift/client-go/config/clientset/versioned"
 	apiinformers "github.com/openshift/client-go/config/informers/externalversions"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
+	goc "github.com/openshift/library-go/pkg/operator/genericoperatorclient"
 	"github.com/openshift/library-go/pkg/operator/loglevel"
-	"github.com/openshift/library-go/pkg/operator/management"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/staticresourcecontroller"
 	"github.com/openshift/library-go/pkg/operator/status"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 
+	v1alpha1 "github.com/openshift/gcp-pd-csi-driver-operator/pkg/apis/operator/v1alpha1"
 	"github.com/openshift/gcp-pd-csi-driver-operator/pkg/common"
 	"github.com/openshift/gcp-pd-csi-driver-operator/pkg/generated"
-	clientset "github.com/openshift/gcp-pd-csi-driver-operator/pkg/generated/clientset/versioned"
-	informers "github.com/openshift/gcp-pd-csi-driver-operator/pkg/generated/informers/externalversions"
 )
 
 const (
@@ -32,16 +31,16 @@ const (
 )
 
 func RunOperator(ctx context.Context, controllerConfig *controllercmd.ControllerContext) error {
-	ctrlClientset, err := clientset.NewForConfig(controllerConfig.KubeConfig)
-	if err != nil {
-		return err
-	}
+	// ctrlClientset, err := clientset.NewForConfig(controllerConfig.KubeConfig)
+	// if err != nil {
+	// 	return err
+	// }
 
-	ctrlInformers := informers.NewSharedInformerFactoryWithOptions(
-		ctrlClientset,
-		resync,
-		informers.WithTweakListOptions(singleNameListOptions(globalConfigName)),
-	)
+	// ctrlInformers := informers.NewSharedInformerFactoryWithOptions(
+	// 	ctrlClientset,
+	// 	resync,
+	// 	informers.WithTweakListOptions(singleNameListOptions(globalConfigName)),
+	// )
 
 	apiClientset, err := apiclientset.NewForConfig(controllerConfig.KubeConfig)
 	if err != nil {
@@ -56,18 +55,18 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 
 	apiInformers := apiinformers.NewSharedInformerFactoryWithOptions(apiClientset, resync)
 
-	operatorClient := OperatorClient{
-		ctrlInformers,
-		ctrlClientset.GcpV1alpha1(),
-	}
-
-	// // operatorClient, _, err := goc.NewClusterScopedOperatorClient(
-	// // 	controllerConfig.KubeConfig,
-	// // 	v1alpha1.SchemeGroupVersion.WithResource("pddrivers"),
-	// // )
-	// if err != nil {
-	// 	return err
+	// operatorClient := OperatorClient{
+	// 	ctrlInformers,
+	// 	ctrlClientset.GcpV1alpha1(),
 	// }
+
+	operatorClient, dynamicInformers, err := goc.NewClusterScopedOperatorClient(
+		controllerConfig.KubeConfig,
+		v1alpha1.SchemeGroupVersion.WithResource("pddrivers"),
+	)
+	if err != nil {
+		return err
+	}
 
 	cb, err := common.NewBuilder("")
 	if err != nil {
@@ -100,8 +99,8 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	)
 
 	// This controller syncs CR.Status.Conditions with the value in the field CR.Spec.ManagementStatus. It only supports Managed state
-	managementStateController := management.NewOperatorManagementStateController(operandName, operatorClient, controllerConfig.EventRecorder)
-	management.SetOperatorNotRemovable()
+	// managementStateController := management.NewOperatorManagementStateController(operandName, operatorClient, controllerConfig.EventRecorder)
+	// management.SetOperatorNotRemovable()
 
 	// This controller syncs the operator log level with the value set in the CR.Spec.OperatorLogLevel
 	logLevelController := loglevel.NewClusterOperatorLoggingController(operatorClient, controllerConfig.EventRecorder)
@@ -117,13 +116,16 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		generated.Asset,
 		[]string{
 			"namespace.yaml",
-			"storageclass.yaml",
+			// "storageclass.yaml",
 			"controller_sa.yaml",
 			"node_sa.yaml",
 			"rbac/provisioner_binding.yaml",
 			"rbac/provisioner_role.yaml",
 			"rbac/attacher_binding.yaml",
 			"rbac/attacher_role.yaml",
+			"rbac/privileged_role.yaml",
+			"rbac/controller_privileged_binding.yaml",
+			"rbac/node_privileged_binding.yaml",
 		},
 		(&resourceapply.ClientHolder{}).WithKubernetes(kubeClient),
 		operatorClient,
@@ -134,10 +136,11 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	for _, informer := range []interface {
 		Start(stopCh <-chan struct{})
 	}{
-		ctrlInformers,
+		// ctrlInformers,
 		apiInformers,
 		ctrlCtx.KubeNamespacedInformerFactory,
 		kubeInformersForNamespaces,
+		dynamicInformers,
 	} {
 		informer.Start(ctx.Done())
 	}
@@ -148,7 +151,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	}{
 		staticResourceController,
 		logLevelController,
-		managementStateController,
+		// managementStateController,
 	} {
 		go controller.Run(ctx, 1)
 	}

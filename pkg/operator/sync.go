@@ -6,6 +6,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -16,24 +17,23 @@ import (
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 
-	"github.com/openshift/gcp-pd-csi-driver-operator/pkg/apis/operator/v1alpha1"
 	"github.com/openshift/gcp-pd-csi-driver-operator/pkg/generated"
 )
 
 const (
 	csiDriver  = "csidriver.yaml"
-	daemonSet  = "node_daemonset.yaml"
-	deployment = "controller_deployment.yaml"
+	daemonSet  = "node.yaml"
+	deployment = "controller.yaml"
 )
 
-func (c *csiDriverOperator) syncDeployment(instance *v1alpha1.PDDriver) (*appsv1.Deployment, error) {
-	deploy := c.getExpectedDeployment(instance)
+func (c *csiDriverOperator) syncDeployment(spec *operatorv1.OperatorSpec, status *operatorv1.OperatorStatus) (*appsv1.Deployment, error) {
+	deploy := c.getExpectedDeployment(spec)
 
 	deploy, _, err := resourceapply.ApplyDeployment(
 		c.kubeClient.AppsV1(),
 		c.eventRecorder,
 		deploy,
-		resourcemerge.ExpectedDeploymentGeneration(deploy, instance.Status.Generations))
+		resourcemerge.ExpectedDeploymentGeneration(deploy, status.Generations))
 	if err != nil {
 		return nil, err
 	}
@@ -41,21 +41,22 @@ func (c *csiDriverOperator) syncDeployment(instance *v1alpha1.PDDriver) (*appsv1
 	return deploy, nil
 }
 
-func (c *csiDriverOperator) syncDaemonSet(instance *v1alpha1.PDDriver) (*appsv1.DaemonSet, error) {
-	daemonSet := c.getExpectedDaemonSet(instance)
+func (c *csiDriverOperator) syncDaemonSet(spec *operatorv1.OperatorSpec, status *operatorv1.OperatorStatus) (*appsv1.DaemonSet, error) {
+	daemonSet := c.getExpectedDaemonSet(spec)
 
 	daemonSet, _, err := resourceapply.ApplyDaemonSet(
 		c.kubeClient.AppsV1(),
 		c.eventRecorder,
 		daemonSet,
-		resourcemerge.ExpectedDaemonSetGeneration(daemonSet, instance.Status.Generations))
+		resourcemerge.ExpectedDaemonSetGeneration(daemonSet, status.Generations))
 	if err != nil {
 		return nil, err
 	}
 
 	return daemonSet, nil
 }
-func (c *csiDriverOperator) getExpectedDeployment(instance *v1alpha1.PDDriver) *appsv1.Deployment {
+
+func (c *csiDriverOperator) getExpectedDeployment(spec *operatorv1.OperatorSpec) *appsv1.Deployment {
 	deployment := resourceread.ReadDeploymentV1OrDie(generated.MustAsset(deployment))
 
 	if c.images.csiDriver != "" {
@@ -76,7 +77,7 @@ func (c *csiDriverOperator) getExpectedDeployment(instance *v1alpha1.PDDriver) *
 
 	// TODO: add LivenessProbe when
 
-	logLevel := getLogLevel(instance.Spec.LogLevel)
+	logLevel := getLogLevel(spec.LogLevel)
 	for i, container := range deployment.Spec.Template.Spec.Containers {
 		for j, arg := range container.Args {
 			if strings.HasPrefix(arg, "--v=") {
@@ -88,7 +89,7 @@ func (c *csiDriverOperator) getExpectedDeployment(instance *v1alpha1.PDDriver) *
 	return deployment
 }
 
-func (c *csiDriverOperator) getExpectedDaemonSet(instance *v1alpha1.PDDriver) *appsv1.DaemonSet {
+func (c *csiDriverOperator) getExpectedDaemonSet(spec *operatorv1.OperatorSpec) *appsv1.DaemonSet {
 	daemonSet := resourceread.ReadDaemonSetV1OrDie(generated.MustAsset(daemonSet))
 
 	if c.images.csiDriver != "" {
@@ -101,7 +102,7 @@ func (c *csiDriverOperator) getExpectedDaemonSet(instance *v1alpha1.PDDriver) *a
 		daemonSet.Spec.Template.Spec.Containers[livenessProbeContainerIndex].Image = c.images.livenessProbe
 	}
 
-	logLevel := getLogLevel(instance.Spec.LogLevel)
+	logLevel := getLogLevel(spec.LogLevel)
 	for i, container := range daemonSet.Spec.Template.Spec.Containers {
 		for j, arg := range container.Args {
 			if strings.HasPrefix(arg, "--v=") {
@@ -128,11 +129,11 @@ func getLogLevel(logLevel operatorv1.LogLevel) int {
 	}
 }
 
-func (c *csiDriverOperator) syncStatus(instance *v1alpha1.PDDriver, deployment *appsv1.Deployment, daemonSet *appsv1.DaemonSet) error {
-	c.syncConditions(instance, deployment, daemonSet)
+func (c *csiDriverOperator) syncStatus(meta *metav1.ObjectMeta, status *operatorv1.OperatorStatus, deployment *appsv1.Deployment, daemonSet *appsv1.DaemonSet) error {
+	c.syncConditions(status, deployment, daemonSet)
 
-	resourcemerge.SetDeploymentGeneration(&instance.Status.Generations, deployment)
-	resourcemerge.SetDaemonSetGeneration(&instance.Status.Generations, daemonSet)
+	resourcemerge.SetDeploymentGeneration(&status.Generations, deployment)
+	resourcemerge.SetDaemonSetGeneration(&status.Generations, daemonSet)
 	// if credentialsRequest != nil {
 	// 	resourcemerge.SetGeneration(&instance.Status.Generations, operatorv1.GenerationStatus{
 	// 		Group:          credentialsRequestGroup,
@@ -143,50 +144,50 @@ func (c *csiDriverOperator) syncStatus(instance *v1alpha1.PDDriver, deployment *
 	// 	})
 	// }
 
-	instance.Status.ObservedGeneration = instance.Generation
+	status.ObservedGeneration = meta.Generation
 
 	// TODO: what should be the number of replicas? Right now the formula is:
 	if deployment != nil && daemonSet != nil {
 		if deployment.Status.UnavailableReplicas == 0 && daemonSet.Status.NumberUnavailable == 0 {
-			instance.Status.ReadyReplicas = deployment.Status.UpdatedReplicas + daemonSet.Status.UpdatedNumberScheduled
+			status.ReadyReplicas = deployment.Status.UpdatedReplicas + daemonSet.Status.UpdatedNumberScheduled
 		}
 	}
 
 	c.setVersion("operator", c.operatorVersion)
-	c.setVersion("aws-ebs-csi-driver", c.operandVersion)
+	c.setVersion("gcp-pd-csi-driver", c.operandVersion)
 
 	return nil
 }
 
-func (c *csiDriverOperator) syncConditions(instance *v1alpha1.PDDriver, deployment *appsv1.Deployment, daemonSet *appsv1.DaemonSet) {
+func (c *csiDriverOperator) syncConditions(status *operatorv1.OperatorStatus, deployment *appsv1.Deployment, daemonSet *appsv1.DaemonSet) {
 	// The operator does not have any prerequisites (at least now)
-	v1helpers.SetOperatorCondition(&instance.Status.OperatorStatus.Conditions,
+	v1helpers.SetOperatorCondition(&status.Conditions,
 		operatorv1.OperatorCondition{
 			Type:   operatorv1.OperatorStatusTypePrereqsSatisfied,
 			Status: operatorv1.ConditionTrue,
 		})
 	// The operator is always upgradeable (at least now)
-	v1helpers.SetOperatorCondition(&instance.Status.OperatorStatus.Conditions,
+	v1helpers.SetOperatorCondition(&status.Conditions,
 		operatorv1.OperatorCondition{
 			Type:   operatorv1.OperatorStatusTypeUpgradeable,
 			Status: operatorv1.ConditionTrue,
 		})
-	c.syncProgressingCondition(instance, deployment, daemonSet)
-	c.syncAvailableCondition(instance, deployment, daemonSet)
+	c.syncProgressingCondition(status, deployment, daemonSet)
+	c.syncAvailableCondition(status, deployment, daemonSet)
 }
 
-func (c *csiDriverOperator) syncAvailableCondition(instance *v1alpha1.PDDriver, deployment *appsv1.Deployment, daemonSet *appsv1.DaemonSet) {
+func (c *csiDriverOperator) syncAvailableCondition(status *operatorv1.OperatorStatus, deployment *appsv1.Deployment, daemonSet *appsv1.DaemonSet) {
 	// TODO: is it enough to check if these values are >0? Or should be more strict and check against the exact desired value?
 	isDeploymentAvailable := deployment != nil && deployment.Status.AvailableReplicas > 0
 	isDaemonSetAvailable := daemonSet != nil && daemonSet.Status.NumberAvailable > 0
 	if isDeploymentAvailable && isDaemonSetAvailable {
-		v1helpers.SetOperatorCondition(&instance.Status.OperatorStatus.Conditions,
+		v1helpers.SetOperatorCondition(&status.Conditions,
 			operatorv1.OperatorCondition{
 				Type:   operatorv1.OperatorStatusTypeAvailable,
 				Status: operatorv1.ConditionTrue,
 			})
 	} else {
-		v1helpers.SetOperatorCondition(&instance.Status.OperatorStatus.Conditions,
+		v1helpers.SetOperatorCondition(&status.Conditions,
 			operatorv1.OperatorCondition{
 				Type:    operatorv1.OperatorStatusTypeAvailable,
 				Status:  operatorv1.ConditionFalse,
@@ -196,7 +197,7 @@ func (c *csiDriverOperator) syncAvailableCondition(instance *v1alpha1.PDDriver, 
 	}
 }
 
-func (c *csiDriverOperator) syncProgressingCondition(instance *v1alpha1.PDDriver, deployment *appsv1.Deployment, daemonSet *appsv1.DaemonSet) {
+func (c *csiDriverOperator) syncProgressingCondition(status *operatorv1.OperatorStatus, deployment *appsv1.Deployment, daemonSet *appsv1.DaemonSet) {
 	// Progressing: true when Deployment or DaemonSet have some work to do
 	// (false: when all replicas are updated to the latest release and available)/
 	var progressing operatorv1.ConditionStatus
@@ -253,7 +254,7 @@ func (c *csiDriverOperator) syncProgressingCondition(instance *v1alpha1.PDDriver
 	default:
 		progressing = operatorv1.ConditionFalse
 	}
-	v1helpers.SetOperatorCondition(&instance.Status.OperatorStatus.Conditions,
+	v1helpers.SetOperatorCondition(&status.Conditions,
 		operatorv1.OperatorCondition{
 			Type:    operatorv1.OperatorStatusTypeProgressing,
 			Status:  progressing,
@@ -264,6 +265,7 @@ func (c *csiDriverOperator) syncProgressingCondition(instance *v1alpha1.PDDriver
 
 // TODO: move this to resourceapply package and delete reportDeleteEvent()
 func (c *csiDriverOperator) deleteAll() error {
+	fmt.Println("--------------------------------deleting")
 	return nil
 }
 
