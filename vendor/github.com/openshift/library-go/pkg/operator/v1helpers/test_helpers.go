@@ -85,6 +85,14 @@ func (c *fakeStaticPodOperatorClient) Informer() cache.SharedIndexInformer {
 	return &fakeSharedIndexInformer{}
 }
 
+func (c *fakeStaticPodOperatorClient) GetObjectMeta() (*metav1.ObjectMeta, string, error) {
+	return nil, "", nil
+}
+
+func (c *fakeStaticPodOperatorClient) UpdateObjectMeta(resourceVersion string, meta *metav1.ObjectMeta) (*metav1.ObjectMeta, string, error) {
+	return nil, "", nil
+}
+
 func (c *fakeStaticPodOperatorClient) GetStaticPodOperatorState() (*operatorv1.StaticPodOperatorSpec, *operatorv1.StaticPodOperatorStatus, string, error) {
 	return c.fakeStaticPodOperatorSpec, c.fakeStaticPodOperatorStatus, c.resourceVersion, nil
 }
@@ -199,6 +207,14 @@ type fakeOperatorClient struct {
 
 func (c *fakeOperatorClient) Informer() cache.SharedIndexInformer {
 	return &fakeSharedIndexInformer{}
+}
+
+func (c *fakeOperatorClient) GetObjectMeta() (*metav1.ObjectMeta, string, error) {
+	return nil, "", nil
+}
+
+func (c *fakeOperatorClient) UpdateObjectMeta(resourceVersion string, meta *metav1.ObjectMeta) (*metav1.ObjectMeta, string, error) {
+	return nil, "", nil
 }
 
 func (c *fakeOperatorClient) GetOperatorState() (*operatorv1.OperatorSpec, *operatorv1.OperatorStatus, string, error) {

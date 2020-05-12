@@ -11,7 +11,6 @@ import (
 	"github.com/openshift/library-go/pkg/operator/events"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	storagev1 "k8s.io/api/storage/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -125,11 +124,6 @@ func ApplyDirectly(clients *ClientHolder, recorder events.Recorder, manifests As
 				result.Error = fmt.Errorf("missing kubeClient")
 			}
 			result.Result, result.Changed, result.Error = ApplySecret(client, recorder, t)
-		case *storagev1.StorageClass:
-			if clients.kubeClient == nil {
-				result.Error = fmt.Errorf("missing kubeClient")
-			}
-			result.Result, result.Changed, result.Error = ApplyStorageClass(clients.kubeClient.StorageV1(), recorder, t)
 		case *rbacv1.ClusterRole:
 			if clients.kubeClient == nil {
 				result.Error = fmt.Errorf("missing kubeClient")

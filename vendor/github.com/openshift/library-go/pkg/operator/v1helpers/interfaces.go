@@ -2,11 +2,16 @@ package v1helpers
 
 import (
 	operatorv1 "github.com/openshift/api/operator/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
 )
 
 type OperatorClient interface {
 	Informer() cache.SharedIndexInformer
+
+	GetObjectMeta() (meta *metav1.ObjectMeta, resourceVersion string, err error)
+	UpdateObjectMeta(oldResourceVersion string, in *metav1.ObjectMeta) (out *metav1.ObjectMeta, newResourceVersion string, err error)
+
 	// GetOperatorState returns the operator spec, status and the resource version, potentially from a lister.
 	GetOperatorState() (spec *operatorv1.OperatorSpec, status *operatorv1.OperatorStatus, resourceVersion string, err error)
 	// UpdateOperatorSpec updates the spec of the operator, assuming the given resource version.
