@@ -311,10 +311,12 @@ func (c *csiDriverOperator) updateSyncError(status *operatorv1.OperatorStatus, e
 }
 
 func (c *csiDriverOperator) handleSync(resourceVersion string, meta *metav1.ObjectMeta, spec *operatorv1.OperatorSpec, status *operatorv1.OperatorStatus) error {
-	_, err := c.syncCredentialsRequest(status)
+	credentialsRequest, err := c.syncCredentialsRequest(status)
 	if err != nil {
 		return fmt.Errorf("failed to sync CredentialsRequest: %v", err)
 	}
+
+	// TODO: wait for secret
 
 	deployment, err := c.syncDeployment(spec, status)
 	if err != nil {
@@ -326,7 +328,7 @@ func (c *csiDriverOperator) handleSync(resourceVersion string, meta *metav1.Obje
 		return fmt.Errorf("failed to sync DaemonSet: %v", err)
 	}
 
-	if err := c.syncStatus(meta, status, deployment, daemonSet); err != nil {
+	if err := c.syncStatus(meta, status, deployment, daemonSet, credentialsRequest); err != nil {
 		return fmt.Errorf("failed to sync status: %v", err)
 	}
 
@@ -408,6 +410,7 @@ func (c *csiDriverOperator) handleErr(err error, key interface{}) {
 }
 
 func (c *csiDriverOperator) isCSIDriverInUse() (bool, error) {
+	// TODO: figure out a way to detect this
 	return false, nil
 	pvcs, err := c.pvInformer.Lister().List(labels.Everything())
 	if err != nil {

@@ -162,20 +162,21 @@ func getLogLevel(logLevel operatorv1.LogLevel) int {
 	}
 }
 
-func (c *csiDriverOperator) syncStatus(meta *metav1.ObjectMeta, status *operatorv1.OperatorStatus, deployment *appsv1.Deployment, daemonSet *appsv1.DaemonSet) error {
+func (c *csiDriverOperator) syncStatus(meta *metav1.ObjectMeta, status *operatorv1.OperatorStatus, deployment *appsv1.Deployment,
+	daemonSet *appsv1.DaemonSet, credentialsRequest *unstructured.Unstructured) error {
 	c.syncConditions(status, deployment, daemonSet)
 
 	resourcemerge.SetDeploymentGeneration(&status.Generations, deployment)
 	resourcemerge.SetDaemonSetGeneration(&status.Generations, daemonSet)
-	// if credentialsRequest != nil {
-	// 	resourcemerge.SetGeneration(&instance.Status.Generations, operatorv1.GenerationStatus{
-	// 		Group:          credentialsRequestGroup,
-	// 		Resource:       credentialsRequestResource,
-	// 		Namespace:      credentialsRequest.GetNamespace(),
-	// 		Name:           credentialsRequest.GetName(),
-	// 		LastGeneration: credentialsRequest.GetGeneration(),
-	// 	})
-	// }
+	if credentialsRequest != nil {
+		resourcemerge.SetGeneration(&status.Generations, operatorv1.GenerationStatus{
+			Group:          credentialsRequestGroup,
+			Resource:       credentialsRequestResource,
+			Namespace:      credentialsRequest.GetNamespace(),
+			Name:           credentialsRequest.GetName(),
+			LastGeneration: credentialsRequest.GetGeneration(),
+		})
+	}
 
 	status.ObservedGeneration = meta.Generation
 
