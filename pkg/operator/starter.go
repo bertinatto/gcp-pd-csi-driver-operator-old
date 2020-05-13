@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	goc "github.com/openshift/library-go/pkg/operator/genericoperatorclient"
 	"github.com/openshift/library-go/pkg/operator/loglevel"
+	"github.com/openshift/library-go/pkg/operator/management"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/staticresourcecontroller"
 	"github.com/openshift/library-go/pkg/operator/status"
@@ -99,8 +100,8 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	)
 
 	// This controller syncs CR.Status.Conditions with the value in the field CR.Spec.ManagementStatus. It only supports Managed state
-	// managementStateController := management.NewOperatorManagementStateController(operandName, operatorClient, controllerConfig.EventRecorder)
-	// management.SetOperatorNotRemovable()
+	managementStateController := management.NewOperatorManagementStateController(operandName, operatorClient, controllerConfig.EventRecorder)
+	management.SetOperatorNotRemovable()
 
 	// This controller syncs the operator log level with the value set in the CR.Spec.OperatorLogLevel
 	logLevelController := loglevel.NewClusterOperatorLoggingController(operatorClient, controllerConfig.EventRecorder)
@@ -151,7 +152,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	}{
 		staticResourceController,
 		logLevelController,
-		// managementStateController,
+		managementStateController,
 	} {
 		go controller.Run(ctx, 1)
 	}
