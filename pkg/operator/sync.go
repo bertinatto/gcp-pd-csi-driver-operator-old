@@ -40,10 +40,10 @@ func (c *csiDriverOperator) syncCredentialsRequest(status *operatorv1.OperatorSt
 	}
 
 	forceRollout := false
-	// if c.versionChanged("operator", c.operatorVersion) {
-	// 	// Operator version changed. The new one _may_ have updated Deployment -> we should deploy it.
-	// 	forceRollout = true
-	// }
+	if c.versionChanged("operator", c.operatorVersion) {
+		// Operator version changed. The new one _may_ have updated Deployment -> we should deploy it.
+		forceRollout = true
+	}
 
 	var expectedGeneration int64 = -1
 	generation := resourcemerge.GenerationFor(
