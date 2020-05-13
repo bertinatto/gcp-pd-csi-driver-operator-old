@@ -116,7 +116,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		generated.Asset,
 		[]string{
 			"namespace.yaml",
-			// "storageclass.yaml",
+			"storageclass.yaml",
 			"controller_sa.yaml",
 			"node_sa.yaml",
 			"rbac/provisioner_binding.yaml",
