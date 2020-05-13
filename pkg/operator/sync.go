@@ -297,12 +297,6 @@ func (c *csiDriverOperator) syncProgressingCondition(status *operatorv1.Operator
 		})
 }
 
-// TODO: move this to resourceapply package and delete reportDeleteEvent()
-func (c *csiDriverOperator) deleteAll() error {
-	fmt.Println("--------------------------------deleting")
-	return nil
-}
-
 func reportDeleteEvent(recorder events.Recorder, obj runtime.Object, originalErr error, details ...string) {
 	gvk := resourcehelper.GuessObjectGroupVersionKind(obj)
 	switch {

@@ -8,7 +8,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
@@ -26,11 +25,8 @@ import (
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/operator/events"
-	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	"github.com/openshift/library-go/pkg/operator/status"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
-
-	"github.com/openshift/gcp-pd-csi-driver-operator/pkg/generated"
 )
 
 var log = logf.Log.WithName("gcp_pd_csi_driver_operator")
@@ -191,39 +187,13 @@ func (c *csiDriverOperator) Run(workers int, stopCh <-chan struct{}) {
 }
 
 func (c *csiDriverOperator) sync() error {
-	meta, metaRV, err := c.client.GetObjectMeta()
+	meta, _, err := c.client.GetObjectMeta()
 	if err != nil {
 		if errors.IsNotFound(err) {
 			klog.Warningf("Object metadata not found: %v", err)
 			return nil
 		}
 		return err
-	}
-
-	if meta.DeletionTimestamp.IsZero() {
-		// CR is NOT being deleted, so make sure it has the finalizer
-		if addFinalizer(meta, operatorFinalizer) {
-			c.client.UpdateObjectMeta(metaRV, meta)
-		}
-	} else {
-		// User tried to delete the CR, let's evaluate if we can
-		// delete the operand and remove the finalizer from the CR
-		ok, err := c.isCSIDriverInUse()
-		if err != nil {
-			return err
-		}
-
-		if ok {
-			// CSI driver is being used but CR has been marked for deletion,
-			// so we can't delete or sync the operand nor remove the finalizer
-			klog.Warningf("CR is being deleted but there are resources using the CSI driver")
-			return nil
-		} else {
-			// CSI driver is not being used, we can go ahead and remove finalizer and delete the operand
-			removeFinalizer(meta, operatorFinalizer)
-			c.client.UpdateObjectMeta(metaRV, meta)
-			return c.deleteAll()
-		}
 	}
 
 	opSpec, opStatus, opResourceVersion, err := c.client.GetOperatorState()
@@ -409,27 +379,6 @@ func (c *csiDriverOperator) handleErr(err error, key interface{}) {
 	c.queue.AddAfter(key, 1*time.Minute)
 }
 
-func (c *csiDriverOperator) isCSIDriverInUse() (bool, error) {
-	// TODO: figure out a way to detect this
-	return false, nil
-	pvcs, err := c.pvInformer.Lister().List(labels.Everything())
-	if err != nil {
-		return false, fmt.Errorf("could not get list of pvs: %v", err)
-	}
-
-	csiDriver := resourceread.ReadCSIDriverV1Beta1OrDie(generated.MustAsset(csiDriver))
-
-	for i := range pvcs {
-		if pvcs[i].Spec.CSI != nil {
-			if pvcs[i].Spec.CSI.Driver == csiDriver.Name {
-				return true, nil
-			}
-		}
-	}
-
-	return false, nil
-}
-
 func logInformerEvent(kind, obj interface{}, message string) {
 	if klog.V(6) {
 		objMeta, err := meta.Accessor(obj)
@@ -438,25 +387,4 @@ func logInformerEvent(kind, obj interface{}, message string) {
 		}
 		klog.V(6).Infof("Received event: %s %s %s", kind, objMeta.GetName(), message)
 	}
-}
-
-func addFinalizer(meta *metav1.ObjectMeta, f string) bool {
-	for _, item := range meta.Finalizers {
-		if item == f {
-			return false
-		}
-	}
-	meta.Finalizers = append(meta.Finalizers, f)
-	return true
-}
-
-func removeFinalizer(meta *metav1.ObjectMeta, f string) {
-	var result []string
-	for _, item := range meta.Finalizers {
-		if item == f {
-			continue
-		}
-		result = append(result, item)
-	}
-	meta.Finalizers = result
 }
