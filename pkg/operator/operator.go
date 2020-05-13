@@ -12,10 +12,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
 	appsinformersv1 "k8s.io/client-go/informers/apps/v1"
-	coreinformersv1 "k8s.io/client-go/informers/core/v1"
-	rbacinformersv1 "k8s.io/client-go/informers/rbac/v1"
-	storageinformersv1 "k8s.io/client-go/informers/storage/v1"
-	storageinformersv1beta1 "k8s.io/client-go/informers/storage/v1beta1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
@@ -35,7 +31,6 @@ const (
 	operandName      = "gcp-pd-csi-driver"
 	operandNamespace = "openshift-gcp-pd-csi-driver"
 
-	operatorFinalizer = "pd.gcp.csi.openshift.io"
 	operatorNamespace = "openshift-gcp-pd-csi-driver-operator"
 
 	operatorVersionEnvName = "OPERATOR_IMAGE_VERSION"
@@ -49,7 +44,7 @@ const (
 	nodeDriverRegistrarImageEnvName = "NODE_DRIVER_REGISTRAR_IMAGE"
 	livenessProbeImageEnvName       = "LIVENESS_PROBE_IMAGE"
 
-	// Index of a container in assets/controller_deployment.yaml and assets/node_daemonset.yaml
+	// Index of a container in assets/controller.yaml and assets/node.yaml
 	csiDriverContainerIndex           = 0 // Both Deployment and DaemonSet
 	provisionerContainerIndex         = 1
 	attacherContainerIndex            = 2
@@ -67,8 +62,6 @@ type csiDriverOperator struct {
 	client             v1helpers.OperatorClient
 	kubeClient         kubernetes.Interface
 	dynamicClient      dynamic.Interface
-	pvInformer         coreinformersv1.PersistentVolumeInformer
-	secretInformer     coreinformersv1.SecretInformer
 	deploymentInformer appsinformersv1.DeploymentInformer
 	dsSetInformer      appsinformersv1.DaemonSetInformer
 	versionGetter      status.VersionGetter
@@ -98,18 +91,10 @@ type images struct {
 
 func NewCSIDriverOperator(
 	client v1helpers.OperatorClient,
-	pvInformer coreinformersv1.PersistentVolumeInformer,
-	namespaceInformer coreinformersv1.NamespaceInformer,
-	csiDriverInformer storageinformersv1beta1.CSIDriverInformer,
-	serviceAccountInformer coreinformersv1.ServiceAccountInformer,
-	clusterRoleInformer rbacinformersv1.ClusterRoleInformer,
-	clusterRoleBindingInformer rbacinformersv1.ClusterRoleBindingInformer,
+	dynamicClient dynamic.Interface,
+	kubeClient kubernetes.Interface,
 	deployInformer appsinformersv1.DeploymentInformer,
 	dsInformer appsinformersv1.DaemonSetInformer,
-	storageClassInformer storageinformersv1.StorageClassInformer,
-	secretInformer coreinformersv1.SecretInformer,
-	kubeClient kubernetes.Interface,
-	dynamicClient dynamic.Interface,
 	versionGetter status.VersionGetter,
 	eventRecorder events.Recorder,
 	operatorVersion string,
@@ -120,8 +105,6 @@ func NewCSIDriverOperator(
 		client:             client,
 		kubeClient:         kubeClient,
 		dynamicClient:      dynamicClient,
-		pvInformer:         pvInformer,
-		secretInformer:     secretInformer,
 		deploymentInformer: deployInformer,
 		dsSetInformer:      dsInformer,
 		versionGetter:      versionGetter,
@@ -132,37 +115,16 @@ func NewCSIDriverOperator(
 		images:             images,
 	}
 
-	csiOperator.informersSynced = append(csiOperator.informersSynced, pvInformer.Informer().HasSynced)
-
-	namespaceInformer.Informer().AddEventHandler(csiOperator.eventHandler("namespace"))
-	csiOperator.informersSynced = append(csiOperator.informersSynced, namespaceInformer.Informer().HasSynced)
-
-	csiDriverInformer.Informer().AddEventHandler(csiOperator.eventHandler("csidriver"))
-	csiOperator.informersSynced = append(csiOperator.informersSynced, csiDriverInformer.Informer().HasSynced)
-
-	serviceAccountInformer.Informer().AddEventHandler(csiOperator.eventHandler("serviceaccount"))
-	csiOperator.informersSynced = append(csiOperator.informersSynced, csiDriverInformer.Informer().HasSynced)
-
-	clusterRoleInformer.Informer().AddEventHandler(csiOperator.eventHandler("clusterrole"))
-	csiOperator.informersSynced = append(csiOperator.informersSynced, clusterRoleInformer.Informer().HasSynced)
-
-	clusterRoleBindingInformer.Informer().AddEventHandler(csiOperator.eventHandler("clusterrolebinding"))
-	csiOperator.informersSynced = append(csiOperator.informersSynced, clusterRoleBindingInformer.Informer().HasSynced)
-
 	deployInformer.Informer().AddEventHandler(csiOperator.eventHandler("deployment"))
-	csiOperator.informersSynced = append(csiOperator.informersSynced, deployInformer.Informer().HasSynced)
-
 	dsInformer.Informer().AddEventHandler(csiOperator.eventHandler("daemonset"))
-	csiOperator.informersSynced = append(csiOperator.informersSynced, dsInformer.Informer().HasSynced)
-
-	storageClassInformer.Informer().AddEventHandler(csiOperator.eventHandler("storageclass"))
-	csiOperator.informersSynced = append(csiOperator.informersSynced, storageClassInformer.Informer().HasSynced)
-
 	client.Informer().AddEventHandler(csiOperator.eventHandler("pddriver"))
-	csiOperator.informersSynced = append(csiOperator.informersSynced, client.Informer().HasSynced)
 
-	secretInformer.Informer().AddEventHandler(csiOperator.eventHandler("secret"))
-	csiOperator.informersSynced = append(csiOperator.informersSynced, secretInformer.Informer().HasSynced)
+	csiOperator.informersSynced = append(
+		csiOperator.informersSynced,
+		deployInformer.Informer().HasSynced,
+		dsInformer.Informer().HasSynced,
+		client.Informer().HasSynced,
+	)
 
 	csiOperator.syncHandler = csiOperator.sync
 

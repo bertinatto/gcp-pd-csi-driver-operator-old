@@ -6,8 +6,6 @@ import (
 	"os"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/klog"
 
@@ -32,39 +30,22 @@ const (
 )
 
 func RunOperator(ctx context.Context, controllerConfig *controllercmd.ControllerContext) error {
-	// ctrlClientset, err := clientset.NewForConfig(controllerConfig.KubeConfig)
-	// if err != nil {
-	// 	return err
-	// }
-
-	// ctrlInformers := informers.NewSharedInformerFactoryWithOptions(
-	// 	ctrlClientset,
-	// 	resync,
-	// 	informers.WithTweakListOptions(singleNameListOptions(globalConfigName)),
-	// )
-
 	apiClientset, err := apiclientset.NewForConfig(controllerConfig.KubeConfig)
 	if err != nil {
 		return err
 	}
 
 	dynamicConfig := dynamic.ConfigFor(controllerConfig.KubeConfig)
-	dynamicClient, err := dynamic.NewForConfig(dynamicConfig)
+	dynamicClientset, err := dynamic.NewForConfig(dynamicConfig)
 	if err != nil {
 		return err
 	}
 
 	apiInformers := apiinformers.NewSharedInformerFactoryWithOptions(apiClientset, resync)
 
-	// operatorClient := OperatorClient{
-	// 	ctrlInformers,
-	// 	ctrlClientset.GcpV1alpha1(),
-	// }
-
-	operatorClient, dynamicInformers, err := goc.NewClusterScopedOperatorClient(
-		controllerConfig.KubeConfig,
-		v1alpha1.SchemeGroupVersion.WithResource("pddrivers"),
-	)
+	// Create GenericOperatorclient
+	gvr := v1alpha1.SchemeGroupVersion.WithResource("pddrivers")
+	operatorClient, dynamicInformers, err := goc.NewClusterScopedOperatorClient(controllerConfig.KubeConfig, gvr)
 	if err != nil {
 		return err
 	}
@@ -80,18 +61,10 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 
 	operator := NewCSIDriverOperator(
 		operatorClient,
-		ctrlCtx.KubeNamespacedInformerFactory.Core().V1().PersistentVolumes(),
-		ctrlCtx.KubeNamespacedInformerFactory.Core().V1().Namespaces(),
-		ctrlCtx.KubeNamespacedInformerFactory.Storage().V1beta1().CSIDrivers(),
-		ctrlCtx.KubeNamespacedInformerFactory.Core().V1().ServiceAccounts(),
-		ctrlCtx.KubeNamespacedInformerFactory.Rbac().V1().ClusterRoles(),
-		ctrlCtx.KubeNamespacedInformerFactory.Rbac().V1().ClusterRoleBindings(),
+		dynamicClientset,
+		kubeClient,
 		ctrlCtx.KubeNamespacedInformerFactory.Apps().V1().Deployments(),
 		ctrlCtx.KubeNamespacedInformerFactory.Apps().V1().DaemonSets(),
-		ctrlCtx.KubeNamespacedInformerFactory.Storage().V1().StorageClasses(),
-		ctrlCtx.KubeNamespacedInformerFactory.Core().V1().Secrets(),
-		kubeClient,
-		dynamicClient,
 		versionGetter,
 		controllerConfig.EventRecorder,
 		os.Getenv(operatorVersionEnvName),
@@ -137,7 +110,6 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	for _, informer := range []interface {
 		Start(stopCh <-chan struct{})
 	}{
-		// ctrlInformers,
 		apiInformers,
 		ctrlCtx.KubeNamespacedInformerFactory,
 		kubeInformersForNamespaces,
@@ -163,12 +135,6 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	<-ctx.Done()
 
 	return fmt.Errorf("stopped")
-}
-
-func singleNameListOptions(name string) func(opts *metav1.ListOptions) {
-	return func(opts *metav1.ListOptions) {
-		opts.FieldSelector = fields.OneTermEqualSelector("metadata.name", name).String()
-	}
 }
 
 func imagesFromEnv() images {
