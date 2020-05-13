@@ -5,16 +5,12 @@ import (
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
-	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
-	"github.com/openshift/library-go/pkg/operator/resource/resourcehelper"
 	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
@@ -145,21 +141,6 @@ func (c *csiDriverOperator) getExpectedDaemonSet(spec *operatorv1.OperatorSpec) 
 	}
 
 	return daemonSet
-}
-
-func getLogLevel(logLevel operatorv1.LogLevel) int {
-	switch logLevel {
-	case operatorv1.Normal, "":
-		return 2
-	case operatorv1.Debug:
-		return 4
-	case operatorv1.Trace:
-		return 6
-	case operatorv1.TraceAll:
-		return 100
-	default:
-		return 2
-	}
 }
 
 func (c *csiDriverOperator) syncStatus(meta *metav1.ObjectMeta, status *operatorv1.OperatorStatus, deployment *appsv1.Deployment,
@@ -297,14 +278,17 @@ func (c *csiDriverOperator) syncProgressingCondition(status *operatorv1.Operator
 		})
 }
 
-func reportDeleteEvent(recorder events.Recorder, obj runtime.Object, originalErr error, details ...string) {
-	gvk := resourcehelper.GuessObjectGroupVersionKind(obj)
-	switch {
-	case originalErr != nil && !apierrors.IsNotFound(originalErr):
-		recorder.Warningf(fmt.Sprintf("%sDeleteFailed", gvk.Kind), "Failed to delete %s: %v", resourcehelper.FormatResourceForCLIWithNamespace(obj), originalErr)
-	case len(details) == 0:
-		recorder.Eventf(fmt.Sprintf("%sDeleted", gvk.Kind), "Deleted %s", resourcehelper.FormatResourceForCLIWithNamespace(obj))
+func getLogLevel(logLevel operatorv1.LogLevel) int {
+	switch logLevel {
+	case operatorv1.Normal, "":
+		return 2
+	case operatorv1.Debug:
+		return 4
+	case operatorv1.Trace:
+		return 6
+	case operatorv1.TraceAll:
+		return 100
 	default:
-		recorder.Eventf(fmt.Sprintf("%sDeleted", gvk.Kind), "Deleted %s:\n%s", resourcehelper.FormatResourceForCLIWithNamespace(obj), strings.Join(details, "\n"))
+		return 2
 	}
 }
