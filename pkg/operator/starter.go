@@ -32,15 +32,8 @@ const (
 	operandNamespace  = "openshift-gcp-pd-csi-driver"
 	operatorNamespace = "openshift-gcp-pd-csi-driver-operator"
 
-	operatorVersionEnvName          = "OPERATOR_IMAGE_VERSION"
-	operandVersionEnvName           = "OPERAND_IMAGE_VERSION"
-	driverImageEnvName              = "DRIVER_IMAGE"
-	provisionerImageEnvName         = "PROVISIONER_IMAGE"
-	attacherImageEnvName            = "ATTACHER_IMAGE"
-	resizerImageEnvName             = "RESIZER_IMAGE"
-	snapshotterImageEnvName         = "SNAPSHOTTER_IMAGE"
-	nodeDriverRegistrarImageEnvName = "NODE_DRIVER_REGISTRAR_IMAGE"
-	livenessProbeImageEnvName       = "LIVENESS_PROBE_IMAGE"
+	operatorVersionEnvName = "OPERATOR_IMAGE_VERSION"
+	operandVersionEnvName  = "OPERAND_IMAGE_VERSION"
 
 	resync = 20 * time.Minute
 )
@@ -85,7 +78,6 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		controllerConfig.EventRecorder,
 		os.Getenv(operatorVersionEnvName),
 		os.Getenv(operandVersionEnvName),
-		imagesFromEnv(),
 		generated.Asset,
 		[]string{
 			// "controller.yaml",
@@ -157,16 +149,4 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	<-ctx.Done()
 
 	return fmt.Errorf("stopped")
-}
-
-func imagesFromEnv() csidrivercontroller.Images {
-	return csidrivercontroller.Images{
-		CSIDriver:           os.Getenv(driverImageEnvName),
-		Provisioner:         os.Getenv(provisionerImageEnvName),
-		Attacher:            os.Getenv(attacherImageEnvName),
-		Resizer:             os.Getenv(resizerImageEnvName),
-		Snapshotter:         os.Getenv(snapshotterImageEnvName),
-		NodeDriverRegistrar: os.Getenv(nodeDriverRegistrarImageEnvName),
-		LivenessProbe:       os.Getenv(livenessProbeImageEnvName),
-	}
 }
