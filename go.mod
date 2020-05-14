@@ -4,7 +4,7 @@ go 1.13
 
 require (
 	bitbucket.org/ww/goautoneg v0.0.0-20120707110453-75cd24fc2f2c // indirect
-	github.com/bertinatto/csi-driver-controller v0.0.0-20200514184703-002c2f5a6a0d
+	github.com/bertinatto/csi-driver-controller v0.0.0-20200514202934-8e4c28732e50
 	github.com/jteeuwen/go-bindata v3.0.8-0.20151023091102-a0ff2567cfb7+incompatible
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/openshift/api v0.0.0-20200326160804-ecb9283fe820
