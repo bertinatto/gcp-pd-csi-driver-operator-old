@@ -1,4 +1,4 @@
-package operator
+package csidrivercontroller
 
 import (
 	"fmt"
@@ -21,6 +21,7 @@ import (
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/operator/events"
+	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/status"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 )
@@ -28,14 +29,12 @@ import (
 var log = logf.Log.WithName("gcp_pd_csi_driver_operator")
 
 const (
-	operandName      = "gcp-pd-csi-driver"
-	operandNamespace = "openshift-gcp-pd-csi-driver"
-
+	operandName       = "gcp-pd-csi-driver"
+	operandNamespace  = "openshift-gcp-pd-csi-driver"
 	operatorNamespace = "openshift-gcp-pd-csi-driver-operator"
 
-	operatorVersionEnvName = "OPERATOR_IMAGE_VERSION"
-	operandVersionEnvName  = "OPERAND_IMAGE_VERSION"
-
+	operatorVersionEnvName          = "OPERATOR_IMAGE_VERSION"
+	operandVersionEnvName           = "OPERAND_IMAGE_VERSION"
 	driverImageEnvName              = "DRIVER_IMAGE"
 	provisionerImageEnvName         = "PROVISIONER_IMAGE"
 	attacherImageEnvName            = "ATTACHER_IMAGE"
@@ -58,7 +57,7 @@ const (
 	maxRetries = 15
 )
 
-type csiDriverOperator struct {
+type csiDriverController struct {
 	client             v1helpers.OperatorClient
 	kubeClient         kubernetes.Interface
 	dynamicClient      dynamic.Interface
@@ -77,6 +76,9 @@ type csiDriverOperator struct {
 	operatorVersion string
 	operandVersion  string
 	images          images
+
+	manifests resourceapply.AssetFunc
+	files     []string
 }
 
 type images struct {
@@ -89,7 +91,7 @@ type images struct {
 	livenessProbe       string
 }
 
-func NewCSIDriverOperator(
+func NewCSIDriverController(
 	client v1helpers.OperatorClient,
 	dynamicClient dynamic.Interface,
 	kubeClient kubernetes.Interface,
@@ -100,8 +102,10 @@ func NewCSIDriverOperator(
 	operatorVersion string,
 	operandVersion string,
 	images images,
-) *csiDriverOperator {
-	csiOperator := &csiDriverOperator{
+	manifests resourceapply.AssetFunc,
+	files []string,
+) *csiDriverController {
+	controller := &csiDriverController{
 		client:             client,
 		kubeClient:         kubeClient,
 		dynamicClient:      dynamicClient,
@@ -113,25 +117,27 @@ func NewCSIDriverOperator(
 		operatorVersion:    operatorVersion,
 		operandVersion:     operandVersion,
 		images:             images,
+		manifests:          manifests,
+		files:              files,
 	}
 
-	deployInformer.Informer().AddEventHandler(csiOperator.eventHandler("deployment"))
-	dsInformer.Informer().AddEventHandler(csiOperator.eventHandler("daemonset"))
-	client.Informer().AddEventHandler(csiOperator.eventHandler("pddriver"))
+	deployInformer.Informer().AddEventHandler(controller.eventHandler("deployment"))
+	dsInformer.Informer().AddEventHandler(controller.eventHandler("daemonset"))
+	client.Informer().AddEventHandler(controller.eventHandler("pddriver"))
 
-	csiOperator.informersSynced = append(
-		csiOperator.informersSynced,
+	controller.informersSynced = append(
+		controller.informersSynced,
 		deployInformer.Informer().HasSynced,
 		dsInformer.Informer().HasSynced,
 		client.Informer().HasSynced,
 	)
 
-	csiOperator.syncHandler = csiOperator.sync
+	controller.syncHandler = controller.sync
 
-	return csiOperator
+	return controller
 }
 
-func (c *csiDriverOperator) Run(workers int, stopCh <-chan struct{}) {
+func (c *csiDriverController) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer c.queue.ShutDown()
 
@@ -148,7 +154,7 @@ func (c *csiDriverOperator) Run(workers int, stopCh <-chan struct{}) {
 	<-stopCh
 }
 
-func (c *csiDriverOperator) sync() error {
+func (c *csiDriverController) sync() error {
 	meta, _, err := c.client.GetObjectMeta()
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -210,7 +216,7 @@ func (c *csiDriverOperator) sync() error {
 	return syncErr
 }
 
-func (c *csiDriverOperator) updateSyncError(status *operatorv1.OperatorStatus, err error) {
+func (c *csiDriverController) updateSyncError(status *operatorv1.OperatorStatus, err error) {
 	if err != nil {
 		// Operator is Degraded: could not finish what it was doing
 		v1helpers.SetOperatorCondition(&status.Conditions,
@@ -242,7 +248,7 @@ func (c *csiDriverOperator) updateSyncError(status *operatorv1.OperatorStatus, e
 	}
 }
 
-func (c *csiDriverOperator) handleSync(resourceVersion string, meta *metav1.ObjectMeta, spec *operatorv1.OperatorSpec, status *operatorv1.OperatorStatus) error {
+func (c *csiDriverController) handleSync(resourceVersion string, meta *metav1.ObjectMeta, spec *operatorv1.OperatorSpec, status *operatorv1.OperatorStatus) error {
 	credentialsRequest, err := c.syncCredentialsRequest(status)
 	if err != nil {
 		return fmt.Errorf("failed to sync CredentialsRequest: %v", err)
@@ -267,17 +273,17 @@ func (c *csiDriverOperator) handleSync(resourceVersion string, meta *metav1.Obje
 	return nil
 }
 
-func (c *csiDriverOperator) setVersion(operandName, version string) {
+func (c *csiDriverController) setVersion(operandName, version string) {
 	if c.versionGetter.GetVersions()[operandName] != version {
 		c.versionGetter.SetVersion(operandName, version)
 	}
 }
 
-func (c *csiDriverOperator) versionChanged(operandName, version string) bool {
+func (c *csiDriverController) versionChanged(operandName, version string) bool {
 	return c.versionGetter.GetVersions()[operandName] != version
 }
 
-func (c *csiDriverOperator) enqueue(obj interface{}) {
+func (c *csiDriverController) enqueue(obj interface{}) {
 	// we're filtering out config maps that are "leader" based and we don't have logic around them
 	// resyncing on these causes the operator to sync every 14s for no good reason
 	if cm, ok := obj.(*corev1.ConfigMap); ok && cm.GetAnnotations() != nil && cm.GetAnnotations()[resourcelock.LeaderElectionRecordAnnotationKey] != "" {
@@ -288,7 +294,7 @@ func (c *csiDriverOperator) enqueue(obj interface{}) {
 	c.queue.Add(globalConfigName)
 }
 
-func (c *csiDriverOperator) eventHandler(kind string) cache.ResourceEventHandler {
+func (c *csiDriverController) eventHandler(kind string) cache.ResourceEventHandler {
 	return cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			logInformerEvent(kind, obj, "added")
@@ -305,12 +311,12 @@ func (c *csiDriverOperator) eventHandler(kind string) cache.ResourceEventHandler
 	}
 }
 
-func (c *csiDriverOperator) worker() {
+func (c *csiDriverController) worker() {
 	for c.processNextWorkItem() {
 	}
 }
 
-func (c *csiDriverOperator) processNextWorkItem() bool {
+func (c *csiDriverController) processNextWorkItem() bool {
 	key, quit := c.queue.Get()
 	if quit {
 		return false
@@ -323,7 +329,7 @@ func (c *csiDriverOperator) processNextWorkItem() bool {
 	return true
 }
 
-func (c *csiDriverOperator) handleErr(err error, key interface{}) {
+func (c *csiDriverController) handleErr(err error, key interface{}) {
 	if err == nil {
 		c.queue.Forget(key)
 		return

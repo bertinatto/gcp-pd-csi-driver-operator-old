@@ -23,9 +23,25 @@ import (
 	v1alpha1 "github.com/openshift/gcp-pd-csi-driver-operator/pkg/apis/operator/v1alpha1"
 	"github.com/openshift/gcp-pd-csi-driver-operator/pkg/common"
 	"github.com/openshift/gcp-pd-csi-driver-operator/pkg/generated"
+
+	"github.com/bertinatto/csi-driver-controller/pkg/csidrivercontroller"
 )
 
 const (
+	operandName       = "gcp-pd-csi-driver"
+	operandNamespace  = "openshift-gcp-pd-csi-driver"
+	operatorNamespace = "openshift-gcp-pd-csi-driver-operator"
+
+	operatorVersionEnvName          = "OPERATOR_IMAGE_VERSION"
+	operandVersionEnvName           = "OPERAND_IMAGE_VERSION"
+	driverImageEnvName              = "DRIVER_IMAGE"
+	provisionerImageEnvName         = "PROVISIONER_IMAGE"
+	attacherImageEnvName            = "ATTACHER_IMAGE"
+	resizerImageEnvName             = "RESIZER_IMAGE"
+	snapshotterImageEnvName         = "SNAPSHOTTER_IMAGE"
+	nodeDriverRegistrarImageEnvName = "NODE_DRIVER_REGISTRAR_IMAGE"
+	livenessProbeImageEnvName       = "LIVENESS_PROBE_IMAGE"
+
 	resync = 20 * time.Minute
 )
 
@@ -59,7 +75,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	versionGetter := status.NewVersionGetter()
 	kubeClient := ctrlCtx.ClientBuilder.KubeClientOrDie(operandName)
 
-	operator := NewCSIDriverOperator(
+	csiDriverController := csidrivercontroller.NewCSIDriverController(
 		operatorClient,
 		dynamicClientset,
 		kubeClient,
@@ -70,6 +86,12 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		os.Getenv(operatorVersionEnvName),
 		os.Getenv(operandVersionEnvName),
 		imagesFromEnv(),
+		generated.Asset,
+		[]string{
+			// "controller.yaml",
+			// "node.yaml",
+			// "credentials.yaml",
+		},
 	)
 
 	// This controller syncs CR.Status.Conditions with the value in the field CR.Spec.ManagementStatus. It only supports Managed state
@@ -103,7 +125,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		},
 		(&resourceapply.ClientHolder{}).WithKubernetes(kubeClient),
 		operatorClient,
-		operator.eventRecorder,
+		controllerConfig.EventRecorder,
 	).AddKubeInformers(kubeInformersForNamespaces)
 
 	klog.Info("Starting the Informers.")
@@ -130,21 +152,21 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	}
 
 	klog.Info("Starting the operator.")
-	go operator.Run(1, ctx.Done())
+	go csiDriverController.Run(1, ctx.Done())
 
 	<-ctx.Done()
 
 	return fmt.Errorf("stopped")
 }
 
-func imagesFromEnv() images {
-	return images{
-		csiDriver:           os.Getenv(driverImageEnvName),
-		provisioner:         os.Getenv(provisionerImageEnvName),
-		attacher:            os.Getenv(attacherImageEnvName),
-		resizer:             os.Getenv(resizerImageEnvName),
-		snapshotter:         os.Getenv(snapshotterImageEnvName),
-		nodeDriverRegistrar: os.Getenv(nodeDriverRegistrarImageEnvName),
-		livenessProbe:       os.Getenv(livenessProbeImageEnvName),
+func imagesFromEnv() csidrivercontroller.Images {
+	return csidrivercontroller.Images{
+		CSIDriver:           os.Getenv(driverImageEnvName),
+		Provisioner:         os.Getenv(provisionerImageEnvName),
+		Attacher:            os.Getenv(attacherImageEnvName),
+		Resizer:             os.Getenv(resizerImageEnvName),
+		Snapshotter:         os.Getenv(snapshotterImageEnvName),
+		NodeDriverRegistrar: os.Getenv(nodeDriverRegistrarImageEnvName),
+		LivenessProbe:       os.Getenv(livenessProbeImageEnvName),
 	}
 }

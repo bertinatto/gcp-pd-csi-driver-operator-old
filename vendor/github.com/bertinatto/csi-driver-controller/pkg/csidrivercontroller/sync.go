@@ -1,4 +1,4 @@
-package operator
+package csidrivercontroller
 
 import (
 	"fmt"
@@ -14,23 +14,25 @@ import (
 	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
-
-	"github.com/openshift/gcp-pd-csi-driver-operator/pkg/generated"
 )
 
 const (
-	csiDriver          = "csidriver.yaml"
 	daemonSet          = "node.yaml"
 	deployment         = "controller.yaml"
 	credentialsRequest = "credentials.yaml"
 	specHashAnnotation = "operator.openshift.io/spec-hash"
 )
 
-func (c *csiDriverOperator) syncCredentialsRequest(status *operatorv1.OperatorStatus) (*unstructured.Unstructured, error) {
-	cr := readCredentialRequestsOrDie(generated.MustAsset(credentialsRequest))
+func (c *csiDriverController) syncCredentialsRequest(status *operatorv1.OperatorStatus) (*unstructured.Unstructured, error) {
+	bytes, err := c.manifests(credentialsRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	cr := readCredentialRequestsOrDie(bytes)
 
 	// Set spec.secretRef.namespace
-	err := unstructured.SetNestedField(cr.Object, operandNamespace, "spec", "secretRef", "namespace")
+	err = unstructured.SetNestedField(cr.Object, operandNamespace, "spec", "secretRef", "namespace")
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +57,7 @@ func (c *csiDriverOperator) syncCredentialsRequest(status *operatorv1.OperatorSt
 	return cr, err
 }
 
-func (c *csiDriverOperator) syncDeployment(spec *operatorv1.OperatorSpec, status *operatorv1.OperatorStatus) (*appsv1.Deployment, error) {
+func (c *csiDriverController) syncDeployment(spec *operatorv1.OperatorSpec, status *operatorv1.OperatorStatus) (*appsv1.Deployment, error) {
 	deploy := c.getExpectedDeployment(spec)
 
 	deploy, _, err := resourceapply.ApplyDeployment(
@@ -70,7 +72,7 @@ func (c *csiDriverOperator) syncDeployment(spec *operatorv1.OperatorSpec, status
 	return deploy, nil
 }
 
-func (c *csiDriverOperator) syncDaemonSet(spec *operatorv1.OperatorSpec, status *operatorv1.OperatorStatus) (*appsv1.DaemonSet, error) {
+func (c *csiDriverController) syncDaemonSet(spec *operatorv1.OperatorSpec, status *operatorv1.OperatorStatus) (*appsv1.DaemonSet, error) {
 	daemonSet := c.getExpectedDaemonSet(spec)
 
 	daemonSet, _, err := resourceapply.ApplyDaemonSet(
@@ -85,8 +87,13 @@ func (c *csiDriverOperator) syncDaemonSet(spec *operatorv1.OperatorSpec, status 
 	return daemonSet, nil
 }
 
-func (c *csiDriverOperator) getExpectedDeployment(spec *operatorv1.OperatorSpec) *appsv1.Deployment {
-	deployment := resourceread.ReadDeploymentV1OrDie(generated.MustAsset(deployment))
+func (c *csiDriverController) getExpectedDeployment(spec *operatorv1.OperatorSpec) *appsv1.Deployment {
+	bytes, err := c.manifests(deployment)
+	if err != nil {
+		return nil
+	}
+
+	deployment := resourceread.ReadDeploymentV1OrDie(bytes)
 
 	if c.images.csiDriver != "" {
 		deployment.Spec.Template.Spec.Containers[0].Image = c.images.csiDriver
@@ -118,8 +125,12 @@ func (c *csiDriverOperator) getExpectedDeployment(spec *operatorv1.OperatorSpec)
 	return deployment
 }
 
-func (c *csiDriverOperator) getExpectedDaemonSet(spec *operatorv1.OperatorSpec) *appsv1.DaemonSet {
-	daemonSet := resourceread.ReadDaemonSetV1OrDie(generated.MustAsset(daemonSet))
+func (c *csiDriverController) getExpectedDaemonSet(spec *operatorv1.OperatorSpec) *appsv1.DaemonSet {
+	bytes, err := c.manifests(daemonSet)
+	if err != nil {
+		return nil
+	}
+	daemonSet := resourceread.ReadDaemonSetV1OrDie(bytes)
 
 	if c.images.csiDriver != "" {
 		daemonSet.Spec.Template.Spec.Containers[csiDriverContainerIndex].Image = c.images.csiDriver
@@ -143,7 +154,7 @@ func (c *csiDriverOperator) getExpectedDaemonSet(spec *operatorv1.OperatorSpec) 
 	return daemonSet
 }
 
-func (c *csiDriverOperator) syncStatus(meta *metav1.ObjectMeta, status *operatorv1.OperatorStatus, deployment *appsv1.Deployment,
+func (c *csiDriverController) syncStatus(meta *metav1.ObjectMeta, status *operatorv1.OperatorStatus, deployment *appsv1.Deployment,
 	daemonSet *appsv1.DaemonSet, credentialsRequest *unstructured.Unstructured) error {
 	c.syncConditions(status, deployment, daemonSet)
 
@@ -174,7 +185,7 @@ func (c *csiDriverOperator) syncStatus(meta *metav1.ObjectMeta, status *operator
 	return nil
 }
 
-func (c *csiDriverOperator) syncConditions(status *operatorv1.OperatorStatus, deployment *appsv1.Deployment, daemonSet *appsv1.DaemonSet) {
+func (c *csiDriverController) syncConditions(status *operatorv1.OperatorStatus, deployment *appsv1.Deployment, daemonSet *appsv1.DaemonSet) {
 	// The operator does not have any prerequisites (at least now)
 	v1helpers.SetOperatorCondition(&status.Conditions,
 		operatorv1.OperatorCondition{
@@ -191,7 +202,7 @@ func (c *csiDriverOperator) syncConditions(status *operatorv1.OperatorStatus, de
 	c.syncAvailableCondition(status, deployment, daemonSet)
 }
 
-func (c *csiDriverOperator) syncAvailableCondition(status *operatorv1.OperatorStatus, deployment *appsv1.Deployment, daemonSet *appsv1.DaemonSet) {
+func (c *csiDriverController) syncAvailableCondition(status *operatorv1.OperatorStatus, deployment *appsv1.Deployment, daemonSet *appsv1.DaemonSet) {
 	// TODO: is it enough to check if these values are >0? Or should be more strict and check against the exact desired value?
 	isDeploymentAvailable := deployment != nil && deployment.Status.AvailableReplicas > 0
 	isDaemonSetAvailable := daemonSet != nil && daemonSet.Status.NumberAvailable > 0
@@ -212,7 +223,7 @@ func (c *csiDriverOperator) syncAvailableCondition(status *operatorv1.OperatorSt
 	}
 }
 
-func (c *csiDriverOperator) syncProgressingCondition(status *operatorv1.OperatorStatus, deployment *appsv1.Deployment, daemonSet *appsv1.DaemonSet) {
+func (c *csiDriverController) syncProgressingCondition(status *operatorv1.OperatorStatus, deployment *appsv1.Deployment, daemonSet *appsv1.DaemonSet) {
 	// Progressing: true when Deployment or DaemonSet have some work to do
 	// (false: when all replicas are updated to the latest release and available)/
 	var progressing operatorv1.ConditionStatus
