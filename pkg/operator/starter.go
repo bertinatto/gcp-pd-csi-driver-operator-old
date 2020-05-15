@@ -62,20 +62,24 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	ctrlCtx := common.CreateControllerContext(cb, ctx.Done(), operandNamespace)
 	kubeClient := ctrlCtx.ClientBuilder.KubeClientOrDie(operandName)
 
-	csiDriverController := csidrivercontroller.NewCSIDriverController(
+	config := &csidrivercontroller.Config{
+		OperandName:      operandName,
+		OperandNamespace: operandNamespace,
+		Manifests:        generated.Asset,
+		Files:            nil,
+	}
+	csiDriverController, err := csidrivercontroller.NewCSIDriverController(
+		config,
 		operatorClient,
 		dynamicClientset,
 		kubeClient,
 		ctrlCtx.KubeNamespacedInformerFactory.Apps().V1().Deployments(),
 		ctrlCtx.KubeNamespacedInformerFactory.Apps().V1().DaemonSets(),
 		controllerConfig.EventRecorder,
-		generated.Asset,
-		[]string{
-			// "controller.yaml",
-			// "node.yaml",
-			// "credentials.yaml",
-		},
 	)
+	if err != nil {
+		return err
+	}
 
 	// This controller syncs CR.Status.Conditions with the value in the field CR.Spec.ManagementStatus. It only supports Managed state
 	managementStateController := management.NewOperatorManagementStateController(operandName, operatorClient, controllerConfig.EventRecorder)
