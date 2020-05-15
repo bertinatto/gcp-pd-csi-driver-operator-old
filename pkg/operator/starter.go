@@ -47,7 +47,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 
 	apiInformers := apiinformers.NewSharedInformerFactoryWithOptions(apiClientset, resync)
 
-	// Create GenericOperatorclient
+	// Create GenericOperatorclient. This is used by controllers created down below
 	gvr := v1alpha1.SchemeGroupVersion.WithResource("pddrivers")
 	operatorClient, dynamicInformers, err := goc.NewClusterScopedOperatorClient(controllerConfig.KubeConfig, gvr)
 	if err != nil {
@@ -85,7 +85,8 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	logLevelController := loglevel.NewClusterOperatorLoggingController(operatorClient, controllerConfig.EventRecorder)
 
 	// Static files
-	kubeInformersForNamespaces := v1helpers.NewKubeInformersForNamespaces(kubeClient,
+	kubeInformersForNamespaces := v1helpers.NewKubeInformersForNamespaces(
+		kubeClient,
 		"",
 		operandNamespace,
 		operatorNamespace)
