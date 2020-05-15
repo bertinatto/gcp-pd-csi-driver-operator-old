@@ -183,6 +183,9 @@ spec:
     apiVersion: cloudcredential.openshift.io/v1
     kind: GCPProviderSpec
     predefinedRoles:
+      # FIXME: find a replacement for instanceAdmin, since the CSI driver
+      # only needs "compute.instances.[get|attachDisk|DetachDisk]"
+      - roles/compute.instanceAdmin
       - roles/compute.storageAdmin
       - roles/iam.serviceAccountUser
     # If set to true, don't check whether the requested
