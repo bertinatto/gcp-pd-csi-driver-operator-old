@@ -32,7 +32,7 @@ func (c *csiDriverController) syncCredentialsRequest(status *operatorv1.Operator
 	cr := readCredentialRequestsOrDie(bytes)
 
 	// Set spec.secretRef.namespace
-	err = unstructured.SetNestedField(cr.Object, operandNamespace, "spec", "secretRef", "namespace")
+	err = unstructured.SetNestedField(cr.Object, c.config.operandNamespace, "spec", "secretRef", "namespace")
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +180,7 @@ func (c *csiDriverController) syncStatus(meta *metav1.ObjectMeta, status *operat
 	}
 
 	c.setVersion("operator", c.operatorVersion)
-	c.setVersion("gcp-pd-csi-driver", c.operandVersion)
+	c.setVersion(c.config.operandName, c.operandVersion)
 
 	return nil
 }
