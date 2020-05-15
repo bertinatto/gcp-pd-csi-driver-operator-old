@@ -6,7 +6,7 @@ github.com/PuerkitoBio/purell
 github.com/PuerkitoBio/urlesc
 # github.com/beorn7/perks v1.0.1
 github.com/beorn7/perks/quantile
-# github.com/bertinatto/csi-driver-controller v0.0.0-20200515100613-4a19464569a6
+# github.com/bertinatto/csi-driver-controller v0.0.0-20200515101710-aa1400bcc7e6
 github.com/bertinatto/csi-driver-controller/pkg/csidrivercontroller
 # github.com/blang/semver v3.5.0+incompatible
 github.com/blang/semver
