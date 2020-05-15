@@ -3,7 +3,7 @@ module github.com/openshift/gcp-pd-csi-driver-operator
 go 1.13
 
 require (
-	github.com/bertinatto/csi-driver-controller v0.0.0-20200515094811-c9ecd199a20e
+	github.com/bertinatto/csi-driver-controller v0.0.0-20200515095350-b989371b75bb
 	github.com/jteeuwen/go-bindata v3.0.8-0.20151023091102-a0ff2567cfb7+incompatible
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/openshift/api v0.0.0-20200326160804-ecb9283fe820
