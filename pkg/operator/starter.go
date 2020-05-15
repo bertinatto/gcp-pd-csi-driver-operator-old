@@ -17,10 +17,9 @@ import (
 	"github.com/openshift/library-go/pkg/operator/management"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/staticresourcecontroller"
-	"github.com/openshift/library-go/pkg/operator/status"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 
-	v1alpha1 "github.com/openshift/gcp-pd-csi-driver-operator/pkg/apis/operator/v1alpha1"
+	"github.com/openshift/gcp-pd-csi-driver-operator/pkg/apis/operator/v1alpha1"
 	"github.com/openshift/gcp-pd-csi-driver-operator/pkg/common"
 	"github.com/openshift/gcp-pd-csi-driver-operator/pkg/generated"
 
@@ -65,7 +64,6 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	}
 
 	ctrlCtx := common.CreateControllerContext(cb, ctx.Done(), operandNamespace)
-	versionGetter := status.NewVersionGetter()
 	kubeClient := ctrlCtx.ClientBuilder.KubeClientOrDie(operandName)
 
 	csiDriverController := csidrivercontroller.NewCSIDriverController(
@@ -74,7 +72,6 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		kubeClient,
 		ctrlCtx.KubeNamespacedInformerFactory.Apps().V1().Deployments(),
 		ctrlCtx.KubeNamespacedInformerFactory.Apps().V1().DaemonSets(),
-		versionGetter,
 		controllerConfig.EventRecorder,
 		os.Getenv(operatorVersionEnvName),
 		os.Getenv(operandVersionEnvName),
@@ -139,12 +136,10 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		staticResourceController,
 		logLevelController,
 		managementStateController,
+		csiDriverController,
 	} {
 		go controller.Run(ctx, 1)
 	}
-
-	klog.Info("Starting the operator.")
-	go csiDriverController.Run(1, ctx.Done())
 
 	<-ctx.Done()
 
