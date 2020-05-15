@@ -3,7 +3,6 @@ package operator
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"k8s.io/client-go/dynamic"
@@ -30,9 +29,6 @@ const (
 	operandName       = "gcp-pd-csi-driver"
 	operandNamespace  = "openshift-gcp-pd-csi-driver"
 	operatorNamespace = "openshift-gcp-pd-csi-driver-operator"
-
-	operatorVersionEnvName = "OPERATOR_IMAGE_VERSION"
-	operandVersionEnvName  = "OPERAND_IMAGE_VERSION"
 
 	resync = 20 * time.Minute
 )
@@ -73,8 +69,6 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		ctrlCtx.KubeNamespacedInformerFactory.Apps().V1().Deployments(),
 		ctrlCtx.KubeNamespacedInformerFactory.Apps().V1().DaemonSets(),
 		controllerConfig.EventRecorder,
-		os.Getenv(operatorVersionEnvName),
-		os.Getenv(operandVersionEnvName),
 		generated.Asset,
 		[]string{
 			// "controller.yaml",
