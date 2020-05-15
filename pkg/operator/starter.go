@@ -63,10 +63,11 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	kubeClient := ctrlCtx.ClientBuilder.KubeClientOrDie(operandName)
 
 	config := &csidrivercontroller.Config{
-		OperandName:      operandName,
-		OperandNamespace: operandNamespace,
-		Manifests:        generated.Asset,
-		Files:            nil,
+		OperandName:         operandName,
+		OperandNamespace:    operandNamespace,
+		ControllerManifest:  generated.MustAsset("controller.yaml"),
+		NodeManifest:        generated.MustAsset("node.yaml"),
+		CredentialsManifest: generated.MustAsset("credentials.yaml"),
 	}
 	csiDriverController, err := csidrivercontroller.NewCSIDriverController(
 		config,
