@@ -62,26 +62,6 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	ctrlCtx := common.CreateControllerContext(cb, ctx.Done(), operandNamespace)
 	kubeClient := ctrlCtx.ClientBuilder.KubeClientOrDie(operandName)
 
-	config := &csidrivercontroller.Config{
-		OperandName:         operandName,
-		OperandNamespace:    operandNamespace,
-		ControllerManifest:  generated.MustAsset("controller.yaml"),
-		NodeManifest:        generated.MustAsset("node.yaml"),
-		CredentialsManifest: generated.MustAsset("credentials.yaml"),
-	}
-	csiDriverController, err := csidrivercontroller.NewCSIDriverController(
-		config,
-		operatorClient,
-		dynamicClientset,
-		kubeClient,
-		ctrlCtx.KubeNamespacedInformerFactory.Apps().V1().Deployments(),
-		ctrlCtx.KubeNamespacedInformerFactory.Apps().V1().DaemonSets(),
-		controllerConfig.EventRecorder,
-	)
-	if err != nil {
-		return err
-	}
-
 	// This controller syncs CR.Status.Conditions with the value in the field CR.Spec.ManagementStatus. It only supports Managed state
 	managementStateController := management.NewOperatorManagementStateController(operandName, operatorClient, controllerConfig.EventRecorder)
 	management.SetOperatorNotRemovable()
@@ -89,7 +69,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	// This controller syncs the operator log level with the value set in the CR.Spec.OperatorLogLevel
 	logLevelController := loglevel.NewClusterOperatorLoggingController(operatorClient, controllerConfig.EventRecorder)
 
-	// Static files
+	// This controller makes sure some static files are syncs
 	kubeInformersForNamespaces := v1helpers.NewKubeInformersForNamespaces(
 		kubeClient,
 		"",
@@ -116,6 +96,27 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		operatorClient,
 		controllerConfig.EventRecorder,
 	).AddKubeInformers(kubeInformersForNamespaces)
+
+	// This controller syncs a CSI driver (deployment, daemonSet and credentialsRequest)
+	config := &csidrivercontroller.Config{
+		OperandName:         operandName,
+		OperandNamespace:    operandNamespace,
+		ControllerManifest:  generated.MustAsset("controller.yaml"),
+		NodeManifest:        generated.MustAsset("node.yaml"),
+		CredentialsManifest: generated.MustAsset("credentials.yaml"),
+	}
+	csiDriverController, err := csidrivercontroller.NewCSIDriverController(
+		config,
+		operatorClient,
+		dynamicClientset,
+		kubeClient,
+		ctrlCtx.KubeNamespacedInformerFactory.Apps().V1().Deployments(),
+		ctrlCtx.KubeNamespacedInformerFactory.Apps().V1().DaemonSets(),
+		controllerConfig.EventRecorder,
+	)
+	if err != nil {
+		return err
+	}
 
 	klog.Info("Starting the Informers.")
 	for _, informer := range []interface {
