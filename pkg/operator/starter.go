@@ -8,8 +8,6 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/klog"
 
-	apiclientset "github.com/openshift/client-go/config/clientset/versioned"
-	apiinformers "github.com/openshift/client-go/config/informers/externalversions"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	goc "github.com/openshift/library-go/pkg/operator/genericoperatorclient"
 	"github.com/openshift/library-go/pkg/operator/loglevel"
@@ -18,11 +16,11 @@ import (
 	"github.com/openshift/library-go/pkg/operator/staticresourcecontroller"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 
+	"github.com/bertinatto/csi-driver-controller/pkg/csidrivercontroller"
+
 	"github.com/openshift/gcp-pd-csi-driver-operator/pkg/apis/operator/v1alpha1"
 	"github.com/openshift/gcp-pd-csi-driver-operator/pkg/common"
 	"github.com/openshift/gcp-pd-csi-driver-operator/pkg/generated"
-
-	"github.com/bertinatto/csi-driver-controller/pkg/csidrivercontroller"
 )
 
 const (
@@ -34,18 +32,12 @@ const (
 )
 
 func RunOperator(ctx context.Context, controllerConfig *controllercmd.ControllerContext) error {
-	apiClientset, err := apiclientset.NewForConfig(controllerConfig.KubeConfig)
-	if err != nil {
-		return err
-	}
 
 	dynamicConfig := dynamic.ConfigFor(controllerConfig.KubeConfig)
 	dynamicClientset, err := dynamic.NewForConfig(dynamicConfig)
 	if err != nil {
 		return err
 	}
-
-	apiInformers := apiinformers.NewSharedInformerFactoryWithOptions(apiClientset, resync)
 
 	// Create GenericOperatorclient. This is used by controllers created down below
 	gvr := v1alpha1.SchemeGroupVersion.WithResource("pddrivers")
@@ -69,13 +61,13 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	// This controller syncs the operator log level with the value set in the CR.Spec.OperatorLogLevel
 	logLevelController := loglevel.NewClusterOperatorLoggingController(operatorClient, controllerConfig.EventRecorder)
 
-	// This controller makes sure some static files are syncs
 	kubeInformersForNamespaces := v1helpers.NewKubeInformersForNamespaces(
 		kubeClient,
 		"",
 		operandNamespace,
 		operatorNamespace)
 
+	// This controller makes sure some static files are syncs
 	staticResourceController := staticresourcecontroller.NewStaticResourceController(
 		"GCPPDDriverStaticResources",
 		generated.Asset,
@@ -122,7 +114,6 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	for _, informer := range []interface {
 		Start(stopCh <-chan struct{})
 	}{
-		apiInformers,
 		ctrlCtx.KubeNamespacedInformerFactory,
 		kubeInformersForNamespaces,
 		dynamicInformers,
