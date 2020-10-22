@@ -1,0 +1,12 @@
+{
+  "apiVersion": "gcp.csi.openshift.io/v1alpha1",
+  "kind": "PDDriver",
+  "metadata": {
+    "name": "cluster"
+  },
+  "spec": {
+    "managementState": "Managed",
+    "operatorLogLevel": "Trace",
+    "logLevel": "Trace"
+  }
+}
