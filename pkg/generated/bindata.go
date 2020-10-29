@@ -854,12 +854,14 @@ func roleYaml() (*asset, error) {
 var _storageclassYaml = []byte(`apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: standard-csi
+  name: standard
 provisioner: pd.csi.storage.gke.io
 parameters:
   type: pd-standard
-allowVolumeExpansion: true
+  replication-type: none
 volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Delete
 `)
 
 func storageclassYamlBytes() ([]byte, error) {
