@@ -1,5 +1,4 @@
 # TODO: create custom SCC with things that the CSI driver needs
-
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:

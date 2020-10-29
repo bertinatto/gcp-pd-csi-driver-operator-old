@@ -1,5 +1,3 @@
-SHELL :=/bin/bash
-
 all: build
 .PHONY: all
 
@@ -9,25 +7,7 @@ include $(addprefix ./vendor/github.com/openshift/build-machinery-go/make/, \
 	targets/openshift/deps-gomod.mk \
 	targets/openshift/images.mk \
 	targets/openshift/bindata.mk \
-	targets/openshift/codegen.mk \
 )
-
-# Codegen module needs setting these required variables
-CODEGEN_OUTPUT_PACKAGE :=github.com/openshift/gcp-pd-csi-driver-operator/pkg/generated
-CODEGEN_API_PACKAGE :=github.com/openshift/gcp-pd-csi-driver-operator/pkg/apis
-CODEGEN_GROUPS_VERSION :=operator:v1alpha1
-
-define run-codegen
-	"$(SHELL)" \
-        "$(CODEGEN_PKG)/generate-groups.sh" \
-	"$(CODEGEN_GENERATORS)" \
-	"$(CODEGEN_OUTPUT_PACKAGE)" \
-	"$(CODEGEN_API_PACKAGE)" \
-	"$(CODEGEN_GROUPS_VERSION)" \
-	--output-base $(CODEGEN_OUTPUT_BASE) \
-	--go-header-file $(CODEGEN_GO_HEADER_FILE) \
-	$1
-endef
 
 # Run core verification and all self contained tests.
 #
@@ -45,7 +25,7 @@ IMAGE_REGISTRY?=registry.svc.ci.openshift.org
 # $3 - Dockerfile path
 # $4 - context directory for image build
 # It will generate target "image-$(1)" for building the image and binding it as a prerequisite to target "images".
-$(call build-image,gcp-pd-csi-driver-operator,$(IMAGE_REGISTRY)/ocp/4.5:gcp-pd-csi-driver-operator,./Dockerfile.rhel7,.)
+$(call build-image,gcp-pd-csi-driver-operator,$(IMAGE_REGISTRY)/ocp/4.7:gcp-pd-csi-driver-operator,./Dockerfile.rhel7,.)
 
 # generate bindata targets
 # $0 - macro name

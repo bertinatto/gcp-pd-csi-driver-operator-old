@@ -8,10 +8,8 @@ import (
 
 type OperatorClient interface {
 	Informer() cache.SharedIndexInformer
-
-	GetObjectMeta() (meta *metav1.ObjectMeta, resourceVersion string, err error)
-	UpdateObjectMeta(oldResourceVersion string, in *metav1.ObjectMeta) (out *metav1.ObjectMeta, newResourceVersion string, err error)
-
+	// GetObjectMeta return the operator metadata.
+	GetObjectMeta() (meta *metav1.ObjectMeta, err error)
 	// GetOperatorState returns the operator spec, status and the resource version, potentially from a lister.
 	GetOperatorState() (spec *operatorv1.OperatorSpec, status *operatorv1.OperatorStatus, resourceVersion string, err error)
 	// UpdateOperatorSpec updates the spec of the operator, assuming the given resource version.

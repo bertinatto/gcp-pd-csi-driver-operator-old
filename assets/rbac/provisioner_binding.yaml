@@ -5,7 +5,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: gcp-pd-csi-driver-controller-sa
-    namespace: openshift-gcp-pd-csi-driver
+    namespace: openshift-cluster-csi-drivers
 roleRef:
   kind: ClusterRole
   name: gcp-pd-external-provisioner-role

@@ -2,6 +2,7 @@ package genericoperatorclient
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strings"
 	"time"
@@ -20,9 +21,9 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
-const globalConfigName = "cluster"
+const defaultConfigName = "cluster"
 
-func NewClusterScopedOperatorClient(config *rest.Config, gvr schema.GroupVersionResource) (v1helpers.OperatorClient, dynamicinformer.DynamicSharedInformerFactory, error) {
+func newClusterScopedOperatorClient(config *rest.Config, gvr schema.GroupVersionResource) (*dynamicOperatorClient, dynamicinformer.DynamicSharedInformerFactory, error) {
 	dynamicClient, err := dynamic.NewForConfig(config)
 	if err != nil {
 		return nil, nil, err
@@ -38,58 +39,50 @@ func NewClusterScopedOperatorClient(config *rest.Config, gvr schema.GroupVersion
 	}, informers, nil
 }
 
+func NewClusterScopedOperatorClient(config *rest.Config, gvr schema.GroupVersionResource) (v1helpers.OperatorClient, dynamicinformer.DynamicSharedInformerFactory, error) {
+	d, informers, err := newClusterScopedOperatorClient(config, gvr)
+	if err != nil {
+		return nil, nil, err
+	}
+	d.configName = defaultConfigName
+	return d, informers, nil
+
+}
+
+func NewClusterScopedOperatorClientWithConfigName(config *rest.Config, gvr schema.GroupVersionResource, configName string) (v1helpers.OperatorClient, dynamicinformer.DynamicSharedInformerFactory, error) {
+	if len(configName) < 1 {
+		return nil, nil, fmt.Errorf("config name cannot be empty")
+	}
+	d, informers, err := newClusterScopedOperatorClient(config, gvr)
+	if err != nil {
+		return nil, nil, err
+	}
+	d.configName = configName
+	return d, informers, nil
+
+}
+
 type dynamicOperatorClient struct {
-	informer informers.GenericInformer
-	client   dynamic.ResourceInterface
+	configName string
+	informer   informers.GenericInformer
+	client     dynamic.ResourceInterface
 }
 
 func (c dynamicOperatorClient) Informer() cache.SharedIndexInformer {
 	return c.informer.Informer()
 }
 
-func (c dynamicOperatorClient) GetObjectMeta() (*metav1.ObjectMeta, string, error) {
-	uncastInstance, err := c.informer.Lister().Get(globalConfigName)
+func (c dynamicOperatorClient) GetObjectMeta() (*metav1.ObjectMeta, error) {
+	uncastInstance, err := c.informer.Lister().Get(c.configName)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	instance := uncastInstance.(*unstructured.Unstructured)
-
-	meta, err := getObjectMetaFromUnstructured(instance.UnstructuredContent())
-	if err != nil {
-		return nil, "", err
-	}
-
-	return meta, instance.GetResourceVersion(), nil
-}
-
-func (c dynamicOperatorClient) UpdateObjectMeta(resourceVersion string, meta *metav1.ObjectMeta) (*metav1.ObjectMeta, string, error) {
-	uncastOriginal, err := c.informer.Lister().Get(globalConfigName)
-	if err != nil {
-		return nil, "", err
-	}
-	original := uncastOriginal.(*unstructured.Unstructured)
-
-	copy := original.DeepCopy()
-	copy.SetResourceVersion(resourceVersion)
-	if err := setObjectMetaFromUnstructured(copy.UnstructuredContent(), meta); err != nil {
-		return nil, "", err
-	}
-
-	ret, err := c.client.Update(context.TODO(), copy, metav1.UpdateOptions{})
-	if err != nil {
-		return nil, "", err
-	}
-
-	retMeta, err := getObjectMetaFromUnstructured(ret.UnstructuredContent())
-	if err != nil {
-		return nil, "", err
-	}
-
-	return retMeta, ret.GetResourceVersion(), nil
+	return getObjectMetaFromUnstructured(instance.UnstructuredContent())
 }
 
 func (c dynamicOperatorClient) GetOperatorState() (*operatorv1.OperatorSpec, *operatorv1.OperatorStatus, string, error) {
-	uncastInstance, err := c.informer.Lister().Get(globalConfigName)
+	uncastInstance, err := c.informer.Lister().Get(c.configName)
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -111,7 +104,7 @@ func (c dynamicOperatorClient) GetOperatorState() (*operatorv1.OperatorSpec, *op
 // in operatorv1.OperatorSpec while preserving pre-existing spec fields that have
 // no correspondence in operatorv1.OperatorSpec.
 func (c dynamicOperatorClient) UpdateOperatorSpec(resourceVersion string, spec *operatorv1.OperatorSpec) (*operatorv1.OperatorSpec, string, error) {
-	uncastOriginal, err := c.informer.Lister().Get(globalConfigName)
+	uncastOriginal, err := c.informer.Lister().Get(c.configName)
 	if err != nil {
 		return nil, "", err
 	}
@@ -139,7 +132,7 @@ func (c dynamicOperatorClient) UpdateOperatorSpec(resourceVersion string, spec *
 // in operatorv1.OperatorStatus while preserving pre-existing status fields that have
 // no correspondence in operatorv1.OperatorStatus.
 func (c dynamicOperatorClient) UpdateOperatorStatus(resourceVersion string, status *operatorv1.OperatorStatus) (*operatorv1.OperatorStatus, error) {
-	uncastOriginal, err := c.informer.Lister().Get(globalConfigName)
+	uncastOriginal, err := c.informer.Lister().Get(c.configName)
 	if err != nil {
 		return nil, err
 	}
@@ -177,30 +170,6 @@ func getObjectMetaFromUnstructured(obj map[string]interface{}) (*metav1.ObjectMe
 		return nil, err
 	}
 	return ret, nil
-}
-
-func setObjectMetaFromUnstructured(obj map[string]interface{}, meta *metav1.ObjectMeta) error {
-	// we cannot simply set the entire map because doing so would stomp unknown fields
-	newMeta, err := runtime.DefaultUnstructuredConverter.ToUnstructured(meta)
-	if err != nil {
-		return err
-	}
-
-	origMeta, preExistingMeta, err := unstructured.NestedMap(obj, "metadata")
-	if err != nil {
-		return err
-	}
-	if preExistingMeta {
-		flds := topLevelFields(*meta)
-		for k, v := range origMeta {
-			if !flds[k] {
-				if err := unstructured.SetNestedField(newMeta, v, k); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	return unstructured.SetNestedMap(obj, newMeta, "metadata")
 }
 
 func getOperatorSpecFromUnstructured(obj map[string]interface{}) (*operatorv1.OperatorSpec, error) {
