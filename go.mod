@@ -4,7 +4,7 @@ go 1.15
 
 require (
 	github.com/go-bindata/go-bindata v3.1.2+incompatible
-	github.com/openshift/api v0.0.0-20201019163320-c6a5ec25f267
+	github.com/openshift/api v0.0.0-20201030155712-0c1f5bff0c62
 	github.com/openshift/build-machinery-go v0.0.0-20200917070002-f171684f77ab
 	github.com/openshift/client-go v0.0.0-20201020074620-f8fd44879f7c
 	github.com/openshift/library-go v0.0.0-20201026125231-a28d3d1bad23
