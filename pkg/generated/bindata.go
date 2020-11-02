@@ -205,7 +205,7 @@ spec:
           emptyDir: {}
         - name: cloud-sa-volume
           secret:
-            secretName: gcp-cloud-credentials
+            secretName: gcp-pd-cloud-credentials
   # This is needed due to https://github.com/kubernetes-sigs/kustomize/issues/504
   volumeClaimTemplates: []
 `)
