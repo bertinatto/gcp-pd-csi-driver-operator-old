@@ -854,7 +854,7 @@ func roleYaml() (*asset, error) {
 var _storageclassYaml = []byte(`apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: standard
+  name: standard-csi
 provisioner: pd.csi.storage.gke.io
 parameters:
   type: pd-standard
