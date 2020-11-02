@@ -12,6 +12,7 @@ To build and run the operator locally:
 # Create only the resources the operator needs to run via CLI
 oc apply -f manifests/00_crd.yaml
 oc apply -f manifests/01_namespace.yaml
+oc apply -f manifests/02_credentials.yaml
 oc apply -f manifests/09_cr.yaml
 
 # Build the operator
