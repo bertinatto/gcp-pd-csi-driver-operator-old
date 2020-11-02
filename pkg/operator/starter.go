@@ -25,7 +25,6 @@ const (
 	defaultNamespace = "openshift-cluster-csi-drivers"
 	operatorName     = "gcp-pd-csi-driver-operator"
 	operandName      = "gcp-pd-csi-driver"
-	instanceName     = "pd.csi.storage.gke.io"
 )
 
 func RunOperator(ctx context.Context, controllerConfig *controllercmd.ControllerContext) error {
@@ -39,7 +38,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 
 	// Create GenericOperatorclient. This is used by the library-go controllers created down below
 	gvr := opv1.SchemeGroupVersion.WithResource("clustercsidrivers")
-	operatorClient, dynamicInformers, err := goc.NewClusterScopedOperatorClientWithConfigName(controllerConfig.KubeConfig, gvr, instanceName)
+	operatorClient, dynamicInformers, err := goc.NewClusterScopedOperatorClientWithConfigName(controllerConfig.KubeConfig, gvr, string(opv1.GCPPDCSIDriver))
 	if err != nil {
 		return err
 	}
